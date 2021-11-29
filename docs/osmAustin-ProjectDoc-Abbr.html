@@ -1,0 +1,332 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>osmAustin-ProjectDoc-Abbr</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__left">
+    <div class="stackedit__toc">
+      
+<ul>
+<li><a href="#openstreetmap---data-wrangling">OpenStreetMap - Data Wrangling</a>
+<ul>
+<li><a href="#purpose">Purpose</a></li>
+<li><a href="#selecting-a-dataset">Selecting a Dataset</a></li>
+<li><a href="#auditing">Auditing</a></li>
+<li><a href="#cleaning--transforming">Cleaning & Transforming</a></li>
+<li><a href="#sqlite-database">Sqlite Database</a></li>
+<li><a href="#overview-of-the-data">Overview of the Data</a></li>
+<li><a href="#conclusion">Conclusion</a></li>
+</ul>
+</li>
+</ul>
+
+    </div>
+  </div>
+  <div class="stackedit__right">
+    <div class="stackedit__html">
+      <h1 id="openstreetmap---data-wrangling">OpenStreetMap - Data Wrangling</h1>
+<p>WGU | Data Wrangling<br>
+Udacity | Project:  OpenStreetMap Data<br>
+Abbreviated Project Document</p>
+<blockquote>
+<p>The full project document with code blocks, output, and tables can be found <a href="https://github.com/BronzeToad/osmAustin/tree/main/docs">here</a></p>
+</blockquote>
+<h2 id="purpose">Purpose</h2>
+<p>This project was created for Udacity’s Data Analyst Nanodegree. An extract of xml data was downloaded for a selected city or region from OpenStreetMap (OSM). This document details the auditing, cleaning, transformation, and analysis performed on that raw dataset. After the raw data was cleaned and staged in a tabular format (csv), it was loaded into a database for additional analysis.</p>
+<h2 id="selecting-a-dataset">Selecting a Dataset</h2>
+<p>For this project I decided to work with data from Austin, TX. The selected map area is too large to export directly from OpenStreetMap,<sup><a href="https://www.openstreetmap.org/relation/113314">1</a></sup>&nbsp; but I found a suitable extract hosted by Interline.<sup><a href="https://www.interline.io/osm/extracts/">2</a></sup>&nbsp; This particular extract was a pbf file, so I had to convert it to osm file format before auditing the data. I used a command line tool called osmosis to make this conversion.<sup><a href="https://wiki.openstreetmap.org/wiki/Osmosis/Examples">3</a></sup></p>
+<h2 id="auditing">Auditing</h2>
+<p>To begin the auditing process, I created three summaries; one each for elements, attributes, and keys. I created four functions to accomplish this: print_sorted_dict, count_elements, count_attributes, and count_keys.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmAudit.py">4</a></sup>&nbsp; Using these functions, I printed a few summaries.</p>
+<p>The basic components of the OpenStreetMap data model are tags, and the most important to this project are:</p>
+<ul>
+<li>node - describes points in space</li>
+<li>way - describes area boundaries and features</li>
+<li>relation - describe how other elements work together</li>
+<li>tag - describes the element to which they are attached, and contains two attributes: key (k) and value (v)<br>
+<br></li>
+</ul>
+<p><strong>Exploring Key Values</strong><br>
+Next, I checked the top 10 keys - based on frequency of occurrence - to see where there are opportunities for data cleaning. I also checked a few others that look interesting, and I created a function to facilitate this portion of the audit, key_val_counter.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmAudit.py">4</a></sup>&nbsp; Because I was working in a python notebook, I couldn’t just loop through the keys I was investigating. The printed data would get truncated well before all the keys’ values were displayed. Instead, I decided to run each key in its own cell. Most of the keys’ values for Austin, TX OpenStreetMap data were already very clean. I suspect there are other students and hobbyists who have completed similar projects.</p>
+<p><strong>Problem Tags</strong><br>
+Although most of the top key-values are clean, there are a few with opportunities for cleaning or filtering. I’ll outline how these tags were cleaned/filtered in the next section.</p>
+<p><em><strong>building</strong></em><br>
+There are a few things that need to be cleaned-up in the values for the building key.</p>
+<ul>
+<li>There are spaces where there should be underscores. A simple string replace will correct those.</li>
+<li>A few other entries are incorrect or ambiguous; I’ll correct those with a dictionary replace.</li>
+</ul>
+<p><em><strong>postcode</strong></em><br>
+These data are mostly clean, but there are some post codes included that are not actually in Austin.<sup><a href="https://www.city-data.com/zipmaps/Austin-Texas.html">5</a></sup>&nbsp; I’ll filter those out while cleaning and staging the data.</p>
+<p><em><strong>surface</strong></em><br>
+The values for the surface key need some cleaning. For some of them, I can figure out what the user intended - I can clean those with a dictionary. Some other values are less clear, and I’ll remove those tags with a list.</p>
+<p><em><strong>city</strong></em><br>
+Values for the addr:city tag are a little messy. To fix them, I’ll capitalize just the first<br>
+letter of each word in each city name. A dictionary match should clean up the remainder.</p>
+<p><em><strong>state</strong></em><br>
+There are a few non-Texas values in this key that need to be filtered out while cleaning and staging the data.</p>
+<p><strong>Other Considerations</strong><br>
+I have a few additional cleaning steps to integrate into the data preparation function. There are also values for addr:postcode, addr:state, and surface that will be used to remove problematic elements. In addition to this, there are a set of characters that will cause problems when staging this data - any elements with these characters will be removed as well.</p>
+<h2 id="cleaning--transforming">Cleaning &amp; Transforming</h2>
+<p>To prepare the data for my database I need to clean and filter the raw OpenStreetMap data. Then, I need to transform the data from xml format to a tabular format (csv).</p>
+<p><strong>Cleaning</strong><br>
+First, I wrote a function set for each of the problematic keys I outlined above.</p>
+<p><em><strong>building</strong></em><br>
+For this key, I created a dictionary to correct a few bad values. The clean_building<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeyBuilding.py">6</a></sup>&nbsp; function compares the input value to that dictionary; if the value is contained in the dictionary keys, it’s replaced with the dictionary value. Next, the value is checked for spaces, any that are located are replaced with an underscore.</p>
+<p><em><strong>postcode</strong></em><br>
+I created two functions for the addr:postcode key:</p>
+<ul>
+<li>The clean_postcode<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeyPostcode.py">7</a></sup> function first takes the input value, splits on semicolon, and drops anything after the semicolon.
+<ul>
+<li>‘12345; 98765’ → ‘12345’</li>
+</ul>
+</li>
+<li>Next, it drops the last four digits from any values that have the full 9 digit zip code
+<ul>
+<li>12345-6789 → 12345</li>
+</ul>
+</li>
+<li>Then, the filter_postcode<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeyPostcode.py">7</a></sup>&nbsp; function checks a list of valid Austin, TX zip codes.<sup><a href="https://www.city-data.com/zipmaps/Austin-Texas.html">8</a></sup>&nbsp; It returns <em>False</em> if   that zip code is present on the list (meaning it should not be removed), and <em>True</em> if that zip code is not present on the list (meaning it should be removed).</li>
+</ul>
+<p><em><strong>surface</strong></em><br>
+I created two functions for the surface key:</p>
+<ul>
+<li>For the clean_surface<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeySurface.py">9</a></sup>&nbsp; function, I created a dictionary to correct a few bad values. Then, the input value is compared to that dictionary; if the value is contained in the dictionary keys, it is replaced with the dictionary value.</li>
+<li>The filter_surface<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeySurface.py">9</a></sup>&nbsp; function checks a list of values to remove. It returns True if the input value is on that list (meaning it should be removed), and False if the value is not on that list (meaning it should not be removed).</li>
+</ul>
+<p><em><strong>city</strong></em><br>
+The city key required the most cleaning among those I selected, and the function I created, clean_city,<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeyCity.py">10</a></sup>&nbsp; has multiple steps:</p>
+<ol>
+<li>First, the function splits any city names that have multiple words.
+<ul>
+<li>round rock → [round, rock]</li>
+</ul>
+</li>
+<li>Then, it capitalizes each of those words by looping through each item in the list created when splitting the value.
+<ul>
+<li>[round, rock] → [Round, Rock]</li>
+</ul>
+</li>
+<li>Next, it puts the city names back together, and retains a space between each word.
+<ul>
+<li>[Round, Rock] → Round Rock</li>
+</ul>
+</li>
+<li>Finally, the value is compared to a dictionary to clean up any lingering incorrect city names.</li>
+</ol>
+<p><em><strong>state</strong></em><br>
+Creating a function just to filter for addr:state == TX would have been a textbook example of over-engineering a problem. Instead of creating a function, I just added that filter to the shape function outlined below.</p>
+<p><strong>Transforming</strong><br>
+After the cleaning and filtering functions were developed, I wrote a function, shape_element,<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmXMLtoCSV.py">11</a></sup>&nbsp; that shapes the node and way elements of the raw xml file, and returns them as a Python dictionary. Employing that function, the cleaning functions outlined above, and several helper functions provided by Udacity for this project;<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmXMLtoCSV.py">11</a></sup>&nbsp; I cleaned, filtered, transformed, and staged the data into csv format to prepare it to be loaded into a sqlite database.</p>
+<p><strong>Problems Encountered</strong><br>
+I encountered several problems while working with the Austin OpenStreetMap data. Chief among them was file size. I did not anticipate how resource intensive working with a dataset of this size would be. If I were to do this project again I would select a smaller map to work with. Some of the files used are quite large.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmSizes.py">12</a></sup>&nbsp; To work through this problem, I created a sample file that only contains elements with ways tags for addr:state=TX. This step significantly sped up testing and development, reducing the working file size from 1.79 GB to 42 MB. I did this with the java-based osmosis tool used earlier in this document.<sup><a href="https://wiki.openstreetmap.org/wiki/Osmosis/Examples">3</a></sup>&nbsp; I also had a little trouble finding data to clean. Many of the keys’ values were already very clean. I suspect that since Austin is a tech city other students and hobbyists like myself have done similar projects and cleaned the OpenStreetMap data for this metropolitan area.</p>
+<h2 id="sqlite-database">Sqlite Database</h2>
+<p>After the data was cleaned, I created a sqlite database.<sup><a href="https://www.sqlite.org/index.html">13</a></sup>&nbsp; Then, I created a schema in that database to match the schema of my csv files.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/sql/osmDB_schema.sql">14</a></sup>&nbsp; After that, I loaded the data into their respective tables.</p>
+<h2 id="overview-of-the-data">Overview of the Data</h2>
+<p><strong>Sqlite Database</strong><br>
+After the data was cleaned, I created a sqlite database.<sup><a href="https://www.sqlite.org/index.html">13</a></sup>&nbsp; Then, I created a schema in that database to match the schema of my csv files.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/sql/osmDB_schema.sql">14</a></sup>&nbsp; Next, I loaded the data into their respective tables.</p>
+<p><strong>SQL Stats</strong><br>
+Before digging into the dataset, I took a look at some database stats to get an idea of how much data I’d be working with. To generate those stats, I used another command-line utility program called sqlite3_analyzer.<sup><a href="https://www.sqlite.org/sqlanalyze.html">15</a></sup> &nbsp;Then, I loaded the stats into a table in my database.<sup><a href="https://github.com/BronzeToad/osmAustin/tree/main/sql/sql_stats">16</a></sup>&nbsp; After the stats table was created, I wrote a simple query to check table sizes.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/sql/osmDB_table_sizes.sql">17</a></sup></p>
+<p><strong>Analysis</strong><br>
+Now that the stats were collected I could start analyzing the clean data. As I was analyzing this dataset, I wrote several queries<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/sql/osmDB_queries.sql">18</a></sup>&nbsp; to answer some investigative questions:</p>
+<p>How many people have contributed to the Austin OSM dataset?</p>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="right">contributors</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="right">2,973</td>
+</tr>
+</tbody>
+</table><p>Which years had the most contributions?</p>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">year</th>
+<th align="right">contributions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">2015</td>
+<td align="right">5,958,603</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">2021</td>
+<td align="right">754,611</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">2019</td>
+<td align="right">581,022</td>
+</tr>
+</tbody>
+</table><p>What are the average monthly and yearly contributions?</p>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="right">avg_yearly</th>
+<th align="right">avg_monthly</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="right">586,036</td>
+<td align="right">53,929</td>
+</tr>
+</tbody>
+</table><p>How many total ways tags are in this dataset, and what are the most common tags?</p>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">key</th>
+<th align="right">count_ways</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">-</td>
+<td align="left">Total</td>
+<td align="right">858,496</td>
+</tr>
+<tr>
+<td align="left">1</td>
+<td align="left">building</td>
+<td align="right">620,762</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">height</td>
+<td align="right">438,569</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">addr:street</td>
+<td align="right">261,635</td>
+</tr>
+</tbody>
+</table><p>How many total nodes tags are in this dataset, and what are the most common tags?</p>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">key</th>
+<th align="right">count_nodes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">-</td>
+<td align="left">Total</td>
+<td align="right">7,932,057</td>
+</tr>
+<tr>
+<td align="left">1</td>
+<td align="left">street</td>
+<td align="right">83,171</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">housenumber</td>
+<td align="right">83,135</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">postcode</td>
+<td align="right">62,267</td>
+</tr>
+</tbody>
+</table><p>What are the most common amenities in Austin, TX?</p>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">value</th>
+<th align="right">count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">restaurant</td>
+<td align="right">916</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">bench</td>
+<td align="right">887</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">waste_basket</td>
+<td align="right">791</td>
+</tr>
+</tbody>
+</table><p>What kind of restaurants are popular in Austin?</p>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">value</th>
+<th align="right">count_restaurants</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">sandwich</td>
+<td align="right">116</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">pizza</td>
+<td align="right">115</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">mexican</td>
+<td align="right">110</td>
+</tr>
+</tbody>
+</table><br>
+<p><strong>Other Ideas About the Dataset</strong><br>
+I think one of the best things OpenStreetMap could do to improve their data would be to develop a robust, automated cleaning process. These scripts or bots could automatically make corrections of specific errors. It looks like there is a bot (woodpeck_fixbot) modifying elements in the Austin dataset, but the scope of that project must be relatively narrow because I still found simple corrections to make in the data.</p>
+<p>The kind of bot I’m imagining is more extensive, one example would be Wall-E,<sup><a href="https://wiki.openstreetmap.org/wiki/Wall-E">19</a></sup>&nbsp; but it is currently only operational in Germany and Austria. Perhaps OSM is worried that an automated correction bot for a map as large as the United States could cause problems if it was making inaccurate ‘corrections’. Those hurdles could be overcome through proper testing. Specifically, by testing features on a very small area, and slowly widening the bot’s scope before unleashing it on the entire map.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>These data went on a long journey before landing in a clean sqlite database.</p>
+<ul>
+<li>I converted pbf file to osm format using osmosis, a java-based command line tool.</li>
+<li>Then I investigated the raw data in a python notebook.</li>
+<li>Next, I cleaned, filtered, and transformed the data using a handful of python scripts and functions.</li>
+<li>Finally, I loaded the data into a sqlite database and analyzed it with SQL.</li>
+</ul>
+<p>There is additional work that could be done on the OpenStreetMap data for Austin, TX. Also, data issues are likely to be a constant problem for OSM until someone implements a more widespread automated cleaning process.</p>
+
+    </div>
+  </div>
+</body>
+
+</html>

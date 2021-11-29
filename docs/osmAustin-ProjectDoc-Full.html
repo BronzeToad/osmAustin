@@ -1,0 +1,1705 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>osmAustin-ProjectDoc-Full</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__left">
+    <div class="stackedit__toc">
+      
+<ul>
+<li><a href="#openstreetmap---data-wrangling">OpenStreetMap - Data Wrangling</a>
+<ul>
+<li><a href="#purpose">Purpose</a></li>
+<li><a href="#selecting-a-dataset">Selecting a Dataset</a></li>
+<li><a href="#auditing">Auditing</a></li>
+<li><a href="#cleaning--transforming">Cleaning & Transforming</a></li>
+<li><a href="#overview-of-the-data">Overview of the Data</a></li>
+<li><a href="#conclusion">Conclusion</a></li>
+</ul>
+</li>
+</ul>
+
+    </div>
+  </div>
+  <div class="stackedit__right">
+    <div class="stackedit__html">
+      <h1 id="openstreetmap---data-wrangling">OpenStreetMap - Data Wrangling</h1>
+<p>WGU | Data Wrangling<br>
+Udacity | Project:  OpenStreetMap Data<br>
+Full Project Document</p>
+<blockquote>
+<p>The abbreviated project document without code blocks, output, or tables can be found here: <a href="https://github.com/BronzeToad/osmAustin/tree/main/docs">osmAustin project docs</a></p>
+</blockquote>
+<h2 id="purpose">Purpose</h2>
+<p>This project was created for Udacity’s Data Analyst Nanodegree. An extract of xml data was downloaded for a selected city or region from OpenStreetMap (OSM). This document details the auditing, cleaning, transformation, and analysis performed on that raw dataset. After the raw data was cleaned and staged in a tabular format (csv), it was loaded into a database for additional analysis.<br>
+<br></p>
+<h2 id="selecting-a-dataset">Selecting a Dataset</h2>
+<p>For this project I decided to work with data from Austin, TX. The selected map area is too large to export directly from OpenStreetMap,<sup><a href="https://www.openstreetmap.org/relation/113314">1</a></sup>&nbsp; but I found a suitable extract hosted by Interline.<sup><a href="https://www.interline.io/osm/extracts/">2</a></sup> This particular extract was a pbf file, so I had to convert it to osm file format before auditing the data. I used a command line tool called osmosis to make this conversion.<sup><a href="https://wiki.openstreetmap.org/wiki/Osmosis/Examples">3</a></sup></p>
+<pre class=" language-zsh"><code class="prism  language-zsh"># install homebrew
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# install osmosis
+brew install osmosis  
+
+# convert pbf to osm
+osmosis --read-pbf \austin_texas.osm.pbf --write-xml austin_texas.osm
+</code></pre>
+<h2 id="auditing">Auditing</h2>
+<p>To begin the auditing process, I created three summaries; one each for elements, attributes, and keys. I created four functions to accomplish this: print_sorted_dict, count_elements, count_attributes, and count_keys.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmAudit.py">4</a></sup></p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">import</span> xml<span class="token punctuation">.</span>etree<span class="token punctuation">.</span>ElementTree <span class="token keyword">as</span> eT
+
+<span class="token keyword">def</span> <span class="token function">print_sorted_dict</span><span class="token punctuation">(</span>d<span class="token punctuation">,</span> sort_by<span class="token operator">=</span><span class="token boolean">None</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Prints dictionary sorted by keys or items"""</span>
+    <span class="token keyword">if</span> sort_by <span class="token keyword">is</span> <span class="token boolean">None</span><span class="token punctuation">:</span>
+        sort_by <span class="token operator">=</span> <span class="token string">'items'</span>
+    <span class="token keyword">if</span> sort_by <span class="token operator">==</span> <span class="token string">'keys'</span><span class="token punctuation">:</span>
+        sorted_dict <span class="token operator">=</span> <span class="token builtin">sorted</span><span class="token punctuation">(</span>d<span class="token punctuation">.</span>keys<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> key<span class="token operator">=</span><span class="token keyword">lambda</span> s<span class="token punctuation">:</span> s<span class="token punctuation">.</span>lower<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token keyword">elif</span> sort_by <span class="token operator">==</span> <span class="token string">'items'</span><span class="token punctuation">:</span>
+        sorted_dict <span class="token operator">=</span> <span class="token builtin">dict</span><span class="token punctuation">(</span><span class="token builtin">sorted</span><span class="token punctuation">(</span>d<span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> key<span class="token operator">=</span><span class="token keyword">lambda</span> s<span class="token punctuation">:</span> s<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> reverse<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"Invalid sort_by: please input 'keys' or 'items'\n"</span><span class="token punctuation">)</span>
+        sorted_dict <span class="token operator">=</span> d
+    <span class="token keyword">for</span> k <span class="token keyword">in</span> sorted_dict<span class="token punctuation">:</span>
+        v <span class="token operator">=</span> d<span class="token punctuation">[</span>k<span class="token punctuation">]</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>f<span class="token string">'{k}: {v}'</span><span class="token punctuation">)</span>
+
+<span class="token keyword">def</span> <span class="token function">count_elements</span><span class="token punctuation">(</span>filename<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Prints element tag name and count for each XML element."""</span>
+    d <span class="token operator">=</span> <span class="token punctuation">{</span><span class="token punctuation">}</span>
+    <span class="token keyword">for</span> event<span class="token punctuation">,</span> elem <span class="token keyword">in</span> eT<span class="token punctuation">.</span>iterparse<span class="token punctuation">(</span>filename<span class="token punctuation">,</span> events<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'start'</span><span class="token punctuation">,</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> elem<span class="token punctuation">.</span>tag <span class="token operator">not</span> <span class="token keyword">in</span> d<span class="token punctuation">:</span>
+            d<span class="token punctuation">[</span>elem<span class="token punctuation">.</span>tag<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token number">1</span>
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            d<span class="token punctuation">[</span>elem<span class="token punctuation">.</span>tag<span class="token punctuation">]</span> <span class="token operator">+=</span> <span class="token number">1</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'\n----- Count all tags -----'</span><span class="token punctuation">)</span>
+    print_sorted_dict<span class="token punctuation">(</span>d<span class="token punctuation">)</span>
+    <span class="token keyword">return</span>
+
+<span class="token keyword">def</span> <span class="token function">count_attributes</span><span class="token punctuation">(</span>filename<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Prints attribute name and count for each XML element."""</span>
+    d <span class="token operator">=</span> <span class="token punctuation">{</span><span class="token punctuation">}</span>
+    <span class="token keyword">for</span> event<span class="token punctuation">,</span> elem <span class="token keyword">in</span> eT<span class="token punctuation">.</span>iterparse<span class="token punctuation">(</span>filename<span class="token punctuation">,</span> events<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'start'</span><span class="token punctuation">,</span> <span class="token string">'end'</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> event <span class="token operator">==</span> <span class="token string">'end'</span><span class="token punctuation">:</span>
+            <span class="token keyword">for</span> attr <span class="token keyword">in</span> elem<span class="token punctuation">.</span>attrib<span class="token punctuation">:</span>
+                <span class="token keyword">if</span> attr <span class="token operator">not</span> <span class="token keyword">in</span> d<span class="token punctuation">:</span>
+                    d<span class="token punctuation">[</span>attr<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token number">1</span>
+                <span class="token keyword">else</span><span class="token punctuation">:</span>
+                    d<span class="token punctuation">[</span>attr<span class="token punctuation">]</span> <span class="token operator">+=</span> <span class="token number">1</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'\n----- Count all attributes -----'</span><span class="token punctuation">)</span>
+    print_sorted_dict<span class="token punctuation">(</span>d<span class="token punctuation">)</span>
+
+<span class="token keyword">def</span> <span class="token function">count_keys</span><span class="token punctuation">(</span>filename<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Prints key name and count for each XML element."""</span>
+    d <span class="token operator">=</span> <span class="token punctuation">{</span><span class="token punctuation">}</span>
+    <span class="token keyword">for</span> event<span class="token punctuation">,</span> elem <span class="token keyword">in</span> eT<span class="token punctuation">.</span>iterparse<span class="token punctuation">(</span>filename<span class="token punctuation">,</span> events<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'start'</span><span class="token punctuation">,</span> <span class="token string">'end'</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> event <span class="token operator">==</span> <span class="token string">'end'</span><span class="token punctuation">:</span>
+            key <span class="token operator">=</span> elem<span class="token punctuation">.</span>attrib<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'k'</span><span class="token punctuation">)</span>
+            <span class="token keyword">if</span> key<span class="token punctuation">:</span>
+                <span class="token keyword">if</span> key <span class="token operator">not</span> <span class="token keyword">in</span> d<span class="token punctuation">:</span>
+                    d<span class="token punctuation">[</span>key<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token number">1</span>
+                <span class="token keyword">else</span><span class="token punctuation">:</span>
+                    d<span class="token punctuation">[</span>key<span class="token punctuation">]</span> <span class="token operator">+=</span> <span class="token number">1</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'\n----- Count all keys -----'</span><span class="token punctuation">)</span>
+    print_sorted_dict<span class="token punctuation">(</span>d<span class="token punctuation">)</span>
+</code></pre>
+<br>
+<p>Using these functions, I printed a few summaries.</p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">from</span> osmAudit <span class="token keyword">import</span> count_elements<span class="token punctuation">,</span> count_attributes<span class="token punctuation">,</span> count_keys
+
+<span class="token comment"># define filename</span>
+atx_filename <span class="token operator">=</span> <span class="token string">'data/austin_texas.osm'</span>
+
+<span class="token comment"># get count of elements</span>
+count_elements<span class="token punctuation">(</span>atx_filename<span class="token punctuation">)</span>
+
+<span class="token comment"># get count of attributes</span>
+count_attributes<span class="token punctuation">(</span>atx_filename<span class="token punctuation">)</span>
+
+<span class="token comment"># get count of keys</span>
+count_keys<span class="token punctuation">(</span>atx_filename<span class="token punctuation">)</span>
+</code></pre>
+<blockquote>
+<p>----- Count all tags -----<br>
+nd: 8835948<br>
+node: 7932057<br>
+tag: 2967844<br>
+way: 858496<br>
+member: 58198<br>
+relation: 4341<br>
+osm: 1</p>
+</blockquote>
+<blockquote>
+<p>----- Count all attributes -----<br>
+ref: 8894146<br>
+version: 8794895<br>
+id: 8794894<br>
+timestamp: 8794894<br>
+uid: 8794894<br>
+user: 8794894<br>
+changeset: 8794894<br>
+lat: 7932057<br>
+lon: 7932057<br>
+k: 2967844<br>
+v: 2967844<br>
+type: 58198<br>
+role: 58198<br>
+generator: 1</p>
+</blockquote>
+<blockquote>
+<p>----- Count all keys -----<br>
+building: 622302<br>
+height: 441107<br>
+addr:street: 345406<br>
+addr:housenumber: 344583<br>
+highway: 216664<br>
+addr:postcode: 98282<br>
+name: 73274<br>
+service: 52447<br>
+access: 41496<br>
+tiger:county: 37785<br>
+tiger:cfcc: 37703<br>
+surface: 34399<br>
+tiger:name_base: 33396<br>
+tiger:name_type: 30904<br>
+tiger:reviewed: 25054<br>
+oneway: 25010<br>
+power: 23772<br>
+barrier: 19658<br>
+addr:city: 19394<br>
+addr:state: 19314<br>
+…</p>
+</blockquote>
+<p>The basic components of the OpenStreetMap data model are tags, and the most important to this project are:</p>
+<ul>
+<li>node - describes points in space</li>
+<li>way - describes area boundaries and features</li>
+<li>relation - describe how other elements work together</li>
+<li>tag - describes the element to which they are attached, and contains two attributes: key (k) and value (v)<br>
+<br></li>
+</ul>
+<p><strong>Exploring Key Values</strong><br>
+Next, I checked the top 10 keys - based on frequency of occurrence - to see where there are opportunities for data cleaning. I also checked a few others that look interesting, and I created a function to facilitate this portion of the audit, key_val_counter.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmAudit.py">4</a></sup></p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">import</span> xml<span class="token punctuation">.</span>etree<span class="token punctuation">.</span>ElementTree <span class="token keyword">as</span> eT
+
+<span class="token keyword">def</span> <span class="token function">key_val_counter</span><span class="token punctuation">(</span>filename<span class="token punctuation">,</span> key_name<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Prints key name and count for each instance of key_name"""</span>
+    d <span class="token operator">=</span> <span class="token punctuation">{</span><span class="token punctuation">}</span>
+    <span class="token keyword">for</span> event<span class="token punctuation">,</span> elem <span class="token keyword">in</span> eT<span class="token punctuation">.</span>iterparse<span class="token punctuation">(</span>filename<span class="token punctuation">,</span> events<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'start'</span><span class="token punctuation">,</span> <span class="token string">'end'</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> event <span class="token operator">==</span> <span class="token string">'end'</span><span class="token punctuation">:</span>
+            key <span class="token operator">=</span> elem<span class="token punctuation">.</span>attrib<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'k'</span><span class="token punctuation">)</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> key_name<span class="token punctuation">:</span>
+                val <span class="token operator">=</span> elem<span class="token punctuation">.</span>attrib<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'v'</span><span class="token punctuation">)</span>
+                <span class="token keyword">if</span> val <span class="token operator">not</span> <span class="token keyword">in</span> d<span class="token punctuation">:</span>
+                    d<span class="token punctuation">[</span>val<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token number">1</span>
+                <span class="token keyword">else</span><span class="token punctuation">:</span>
+                    d<span class="token punctuation">[</span>val<span class="token punctuation">]</span> <span class="token operator">+=</span> <span class="token number">1</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'\n----- Count of values for key: '</span> <span class="token operator">+</span> key_name <span class="token operator">+</span> <span class="token string">' -----'</span><span class="token punctuation">)</span>
+    print_sorted_dict<span class="token punctuation">(</span>d<span class="token punctuation">)</span>
+</code></pre>
+<br>
+<p>Because I was working in a python notebook, I couldn’t just loop through the keys I was investigating. The printed data would get truncated well before all the keys’ values were displayed. Instead, I decided to run each key in its own cell.</p>
+<p>Most of the keys’ values for Austin, TX OpenStreetMap data were already very clean. I suspect there are other students and hobbyists who have completed similar projects.</p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">from</span> osmAudit <span class="token keyword">import</span> key_val_counter
+
+<span class="token comment"># define filename</span>
+atx_filename <span class="token operator">=</span> <span class="token string">'data/austin_texas.osm'</span>
+
+<span class="token comment"># print key value counts</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'height'</span><span class="token punctuation">)</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'addr:street'</span><span class="token punctuation">)</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'addr:housenumber'</span><span class="token punctuation">)</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'highway'</span><span class="token punctuation">)</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'name'</span><span class="token punctuation">)</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'service'</span><span class="token punctuation">)</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'tiger:county'</span><span class="token punctuation">)</span>
+</code></pre>
+<br>
+<p><strong>Problem Tags</strong><br>
+Although most of the top key-values are clean, there are a few with opportunities for cleaning or filtering. I’ll outline how these tags were cleaned/filtered in the next section.<br>
+<br></p>
+<p><em><strong>building</strong></em></p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">from</span> osmAudit <span class="token keyword">import</span> key_val_counter
+
+<span class="token comment"># define filename</span>
+atx_filename <span class="token operator">=</span> <span class="token string">'data/austin_texas.osm'</span>
+
+<span class="token comment"># key -&gt; building</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'building'</span><span class="token punctuation">)</span>
+</code></pre>
+<blockquote>
+<p>----- Count of values for key: building -----<br>
+yes: 584823<br>
+house: 20797<br>
+apartments: 4389<br>
+detached: 2685<br>
+carport: 1824<br>
+retail: 954<br>
+roof: 926<br>
+commercial: 758<br>
+school: 691<br>
+residential: 565<br>
+…<br>
+<em>stadium seating: 4 ←</em><br>
+civic: 4<br>
+ruins: 4<br>
+container: 4<br>
+temple: 3<br>
+<em>sports_centre: 3 ←</em><br>
+<em>covered area: 2 ←</em><br>
+…<br>
+<em>big state electric: 1 ←</em><br>
+tree_house: 1<br>
+undefined: 1<br>
+<em>Bing: 1 ←</em><br>
+shelter: 1<br>
+gas_station: 1<br>
+transportation: 1<br>
+<em>Learning_Center/_Day_Care: 1 ←</em><br>
+…</p>
+</blockquote>
+<p>There are a few things that need to be cleaned-up in the values for the building key.</p>
+<ul>
+<li>There are spaces where there should be underscores. A simple string replace will correct those.</li>
+<li>A few other entries are incorrect or ambiguous; I’ll correct those with a dictionary replace.<br>
+<br></li>
+</ul>
+<p><em><strong>postcode</strong></em></p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">from</span> osmAudit <span class="token keyword">import</span> key_val_counter
+
+<span class="token comment"># define filename</span>
+atx_filename <span class="token operator">=</span> <span class="token string">'data/austin_texas.osm'</span>
+
+<span class="token comment"># key -&gt; addr:postcode</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'addr:postcode'</span><span class="token punctuation">)</span>
+</code></pre>
+<blockquote>
+<p>----- Count of values for key: addr:postcode -----<br>
+78645: 10893<br>
+78734: 5627<br>
+78660: 4560<br>
+78653: 3553<br>
+78641: 3276<br>
+78669: 3190<br>
+78754: 2820<br>
+78704: 2559<br>
+78746: 2527<br>
+78723: 2290<br>
+…<br>
+<em>78953: 3 ←</em><br>
+<em>78644: 2 ←</em><br>
+<em>78754;78753: 2 ←</em><br>
+<em>78704-5639: 1 ←</em><br>
+<em>78758-7008: 1 ←</em><br>
+…</p>
+</blockquote>
+<p>These data are mostly clean, but there are some post codes included that are not actually in Austin.<sup><a href="https://www.city-data.com/zipmaps/Austin-Texas.html">5</a></sup> I’ll filter those out while cleaning and staging the data.<br>
+<br></p>
+<p><em><strong>surface</strong></em></p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">from</span> osmAudit <span class="token keyword">import</span> key_val_counter
+
+<span class="token comment"># define filename</span>
+atx_filename <span class="token operator">=</span> <span class="token string">'data/austin_texas.osm'</span>
+
+<span class="token comment"># key -&gt; surface</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'surface'</span><span class="token punctuation">)</span>
+</code></pre>
+<blockquote>
+<p>----- Count of values for key: surface -----<br>
+asphalt: 21169<br>
+paved: 5156<br>
+concrete: 3893<br>
+unpaved: 1407<br>
+<em>concrete:plates: 558 ←</em><br>
+ground: 518<br>
+gravel: 452<br>
+dirt: 391<br>
+paving_stones: 250<br>
+fine_gravel: 181<br>
+…<br>
+cobblestone: 6<br>
+<em>yes: 5 ←</em><br>
+<em>con: 3 ←</em><br>
+mud: 2<br>
+…<br>
+<em>CR_127: 1 ←</em><br>
+<em>paving_stones:30: 1 ←</em><br>
+<em>creekbed_(rock): 1 ←</em><br>
+<em>concrete,_dirt: 1 ←</em><br>
+<em>Large_unattached_stones_laid_in_the_creek: 1 ←</em><br>
+woodchips: 1<br>
+<em>f: 1 ←</em></p>
+</blockquote>
+<p>The values for the surface key need some cleaning. For some of them, I can figure out what the user intended - I can clean those with a dictionary. Some other values are less clear, and I’ll remove those tags with a list.<br>
+<br></p>
+<p><em><strong>city</strong></em></p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">from</span> osmAudit <span class="token keyword">import</span> key_val_counter
+
+<span class="token comment"># define filename</span>
+atx_filename <span class="token operator">=</span> <span class="token string">'data/austin_texas.osm'</span>
+
+<span class="token comment"># key -&gt; addr:city</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'addr:city'</span><span class="token punctuation">)</span>
+</code></pre>
+<blockquote>
+<p>----- Count of values for key: addr:city -----<br>
+Austin: 12095<br>
+Cedar Park: 1985<br>
+Pflugerville: 1137<br>
+Round Rock: 1012<br>
+Georgetown: 713<br>
+Leander: 452<br>
+Elgin: 437<br>
+Hutto: 298<br>
+Bastrop: 280<br>
+Kyle: 181<br>
+…<br>
+Lost Pines: 2<br>
+<em>AUSTIN: 2 ←</em><br>
+<em>Pfluggerville: 2 ←</em><br>
+<em>Wells Branch: 2 ←</em><br>
+<em>Barton Creek: 1 ←</em><br>
+<em>Ste 128, Austin: 1 ←</em><br>
+<em>San Gabriel Village Boulevard: 1 ←</em><br>
+Dale: 1<br>
+<em>manor: 1 ←</em><br>
+<em>Pepe’s Tacos: 1 ←</em><br>
+<em>N Austin: 1 ←</em><br>
+<em>Manchaca,: 1 ←</em><br>
+<em>Austin;austin: 1 ←</em><br>
+<em>kyle: 1 ←</em><br>
+Tampa: 1<br>
+McNeil: 1<br>
+Smithville: 1<br>
+<em>wimberley: 1 ←</em><br>
+<em>Wimberly: 1 ←</em><br>
+Marble Falls: 1<br>
+<em>georgetown: 1 ←</em><br>
+…</p>
+</blockquote>
+<p>Values for the addr:city tag are a little messy. To fix them, I’ll capitalize just the first<br>
+letter of each word in each city name. A dictionary match should clean up the remainder.<br>
+<br></p>
+<p><em><strong>state</strong></em></p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">from</span> osmAudit <span class="token keyword">import</span> key_val_counter
+
+<span class="token comment"># define filename</span>
+atx_filename <span class="token operator">=</span> <span class="token string">'data/austin_texas.osm'</span>
+
+<span class="token comment"># key -&gt; addr:state</span>
+key_val_counter<span class="token punctuation">(</span>atx_filename<span class="token punctuation">,</span> <span class="token string">'addr:state'</span><span class="token punctuation">)</span>
+</code></pre>
+<blockquote>
+<p>----- Count of values for key: addr:state -----<br>
+TX: 19311<br>
+<em>FL: 1 ←</em><br>
+<em>AL: 1 ←</em><br>
+<em>tx: 1 ←</em></p>
+</blockquote>
+<p>There are a few non-Texas values in this key that need to be filtered out while cleaning and staging the data.<br>
+<br></p>
+<p><strong>Other Considerations</strong><br>
+I have a few additional cleaning steps to integrate into the data preparation function. There are also values for addr:postcode, addr:state, and surface that will be used to remove problematic elements. In addition to this, there are a set of characters that will cause problems when staging this data - any elements with these characters will be removed as well.</p>
+<h2 id="cleaning--transforming">Cleaning &amp; Transforming</h2>
+<p>To prepare the data for my database I need to clean and filter the raw OpenStreetMap data. Then, I need to transform the data from xml format to a tabular format (csv).<br>
+<br></p>
+<p><strong>Cleaning</strong><br>
+First, I wrote a function set for each of the problematic keys I outlined above.<br>
+<br></p>
+<p><em><strong>building</strong></em><br>
+For this key, I created a dictionary to correct a few bad values. The<br>
+clean_building<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeyBuilding.py">6</a></sup>&nbsp; function compares the input value to that dictionary; if the value is contained in the dictionary keys, it’s replaced with the dictionary value. Next, the value is checked for spaces, any that are located are replaced with an underscore.</p>
+<pre class=" language-python"><code class="prism  language-python">building_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+    <span class="token string">'Bing'</span><span class="token punctuation">:</span> <span class="token string">'yes'</span><span class="token punctuation">,</span>
+    <span class="token string">'Learning_Center/_Day_Care'</span><span class="token punctuation">:</span> <span class="token string">'learning_center'</span><span class="token punctuation">,</span>
+    <span class="token string">'sports_centre'</span><span class="token punctuation">:</span> <span class="token string">'sports_center'</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">def</span> <span class="token function">clean_building</span><span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Cleans key values for building tag"""</span>
+    <span class="token keyword">for</span> key <span class="token keyword">in</span> building_dict<span class="token punctuation">.</span>keys<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> val <span class="token operator">==</span> key<span class="token punctuation">:</span>
+            val <span class="token operator">=</span> building_dict<span class="token punctuation">.</span>get<span class="token punctuation">(</span>key<span class="token punctuation">)</span>
+    val <span class="token operator">=</span> val<span class="token punctuation">.</span>replace<span class="token punctuation">(</span><span class="token string">' '</span><span class="token punctuation">,</span> <span class="token string">'_'</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> val
+</code></pre>
+<br>
+<p><em><strong>postcode</strong></em><br>
+I created two functions for the addr:postcode key:</p>
+<ul>
+<li>The clean_postcode<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeyPostcode.py">7</a></sup>&nbsp; function first takes the input value, splits on semicolon, and drops anything after the semicolon.
+<ul>
+<li>‘12345; 98765’ → ‘12345’</li>
+</ul>
+</li>
+<li>Next, it drops the last four digits from any values that have the full 9 digit zip code
+<ul>
+<li>12345-6789 → 12345</li>
+</ul>
+</li>
+<li>Then, the filter_postcode<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeyPostcode.py">7</a></sup>&nbsp; function checks a list of valid Austin, TX zip codes.<sup><a href="https://www.city-data.com/zipmaps/Austin-Texas.html">8</a></sup>&nbsp; It returns <em>False</em> if   that zip code is present on the list (meaning it should not be removed), and <em>True</em> if that zip code is not present on the list (meaning it should be removed).</li>
+</ul>
+<pre class=" language-python"><code class="prism  language-python">atx_postcodes <span class="token operator">=</span> <span class="token punctuation">[</span>
+    <span class="token string">'78610'</span><span class="token punctuation">,</span> <span class="token string">'78613'</span><span class="token punctuation">,</span> <span class="token string">'78617'</span><span class="token punctuation">,</span> <span class="token string">'78641'</span><span class="token punctuation">,</span> <span class="token string">'78652'</span><span class="token punctuation">,</span> <span class="token string">'78653'</span><span class="token punctuation">,</span> <span class="token string">'78660'</span><span class="token punctuation">,</span> <span class="token string">'78664'</span><span class="token punctuation">,</span>
+    <span class="token string">'78681'</span><span class="token punctuation">,</span> <span class="token string">'78701'</span><span class="token punctuation">,</span> <span class="token string">'78702'</span><span class="token punctuation">,</span> <span class="token string">'78703'</span><span class="token punctuation">,</span> <span class="token string">'78704'</span><span class="token punctuation">,</span> <span class="token string">'78705'</span><span class="token punctuation">,</span> <span class="token string">'78712'</span><span class="token punctuation">,</span> <span class="token string">'78717'</span><span class="token punctuation">,</span>
+    <span class="token string">'78719'</span><span class="token punctuation">,</span> <span class="token string">'78721'</span><span class="token punctuation">,</span> <span class="token string">'78722'</span><span class="token punctuation">,</span> <span class="token string">'78723'</span><span class="token punctuation">,</span> <span class="token string">'78724'</span><span class="token punctuation">,</span> <span class="token string">'78725'</span><span class="token punctuation">,</span> <span class="token string">'78726'</span><span class="token punctuation">,</span> <span class="token string">'78727'</span><span class="token punctuation">,</span>
+    <span class="token string">'78728'</span><span class="token punctuation">,</span> <span class="token string">'78729'</span><span class="token punctuation">,</span> <span class="token string">'78730'</span><span class="token punctuation">,</span> <span class="token string">'78731'</span><span class="token punctuation">,</span> <span class="token string">'78732'</span><span class="token punctuation">,</span> <span class="token string">'78733'</span><span class="token punctuation">,</span> <span class="token string">'78734'</span><span class="token punctuation">,</span> <span class="token string">'78735'</span><span class="token punctuation">,</span>
+    <span class="token string">'78736'</span><span class="token punctuation">,</span> <span class="token string">'78737'</span><span class="token punctuation">,</span> <span class="token string">'78738'</span><span class="token punctuation">,</span> <span class="token string">'78739'</span><span class="token punctuation">,</span> <span class="token string">'78741'</span><span class="token punctuation">,</span> <span class="token string">'78742'</span><span class="token punctuation">,</span> <span class="token string">'78744'</span><span class="token punctuation">,</span> <span class="token string">'78745'</span><span class="token punctuation">,</span>
+    <span class="token string">'78746'</span><span class="token punctuation">,</span> <span class="token string">'78747'</span><span class="token punctuation">,</span> <span class="token string">'78748'</span><span class="token punctuation">,</span> <span class="token string">'78749'</span><span class="token punctuation">,</span> <span class="token string">'78750'</span><span class="token punctuation">,</span> <span class="token string">'78751'</span><span class="token punctuation">,</span> <span class="token string">'78752'</span><span class="token punctuation">,</span> <span class="token string">'78753'</span><span class="token punctuation">,</span>
+    <span class="token string">'78754'</span><span class="token punctuation">,</span> <span class="token string">'78756'</span><span class="token punctuation">,</span> <span class="token string">'78757'</span><span class="token punctuation">,</span> <span class="token string">'78758'</span><span class="token punctuation">,</span> <span class="token string">'78759'</span>
+<span class="token punctuation">]</span>
+
+
+<span class="token keyword">def</span> <span class="token function">filter_postcode</span><span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Filters key values for addr:postcode tag"""</span>
+
+    <span class="token comment"># run val through postcode cleaning function</span>
+    val <span class="token operator">=</span> clean_postcode<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+
+    <span class="token comment"># set to true if val is not an austin, tx zip code</span>
+    <span class="token keyword">if</span> val <span class="token operator">not</span> <span class="token keyword">in</span> atx_postcodes<span class="token punctuation">:</span>
+        <span class="token keyword">return</span> <span class="token boolean">True</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> <span class="token boolean">False</span>
+
+
+<span class="token keyword">def</span> <span class="token function">clean_postcode</span><span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Cleans key values for addr:postcode tag"""</span>
+
+    <span class="token comment"># remove multiple zip code entries (e.g. '12345; 98765')</span>
+    split_val <span class="token operator">=</span> val<span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">';'</span><span class="token punctuation">,</span> maxsplit<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">)</span>
+    val <span class="token operator">=</span> split_val<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+
+    <span class="token comment"># drop last four from full zip codes (e.g. 12345-6789 -&gt; 12345)</span>
+    <span class="token keyword">if</span> <span class="token builtin">len</span><span class="token punctuation">(</span>val<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">10</span><span class="token punctuation">:</span>
+        val <span class="token operator">=</span> val<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">:</span><span class="token number">5</span><span class="token punctuation">]</span>
+
+    <span class="token keyword">return</span> val
+</code></pre>
+<br>
+<p><em><strong>surface</strong></em><br>
+I created two functions for the surface key:</p>
+<ul>
+<li>For the clean_surface<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeySurface.py">9</a></sup>&nbsp; function, I created a dictionary to correct a few bad values. Then, the input value is compared to that dictionary; if the value is contained in the dictionary keys, it is replaced with the dictionary value.</li>
+<li>The filter_surface<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeySurface.py">9</a></sup>&nbsp; function checks a list of values to remove. It returns True if the input value is on that list (meaning it should be removed), and False if the value is not on that list (meaning it should not be removed).</li>
+</ul>
+<pre class=" language-python"><code class="prism  language-python">surface_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+    <span class="token string">'con'</span><span class="token punctuation">:</span> <span class="token string">'concrete'</span><span class="token punctuation">,</span>
+    <span class="token string">'large,_unattached_stones_through_water'</span><span class="token punctuation">:</span> <span class="token string">'stones'</span><span class="token punctuation">,</span>
+    <span class="token string">'Large_unattached_stones_laid_in_the_creek'</span><span class="token punctuation">:</span> <span class="token string">'stones'</span><span class="token punctuation">,</span>
+    <span class="token string">'paving_stones:30'</span><span class="token punctuation">:</span> <span class="token string">'paving_stones'</span><span class="token punctuation">,</span>
+    <span class="token string">'creekbed_(rock)'</span><span class="token punctuation">:</span> <span class="token string">'rock'</span><span class="token punctuation">,</span>
+    <span class="token string">'concrete,_dirt'</span><span class="token punctuation">:</span> <span class="token string">'concrete;dirt'</span><span class="token punctuation">,</span>
+    <span class="token string">'dirt/sand'</span><span class="token punctuation">:</span> <span class="token string">'dirt;sand'</span><span class="token punctuation">,</span>
+    <span class="token string">'concrete:lanes'</span><span class="token punctuation">:</span> <span class="token string">'concrete'</span><span class="token punctuation">,</span>
+    <span class="token string">'concrete:plates'</span><span class="token punctuation">:</span> <span class="token string">'concrete'</span>
+<span class="token punctuation">}</span>
+
+remove_list <span class="token operator">=</span> <span class="token punctuation">[</span>
+    <span class="token string">'yes'</span><span class="token punctuation">,</span> <span class="token string">'CR_127'</span><span class="token punctuation">,</span> <span class="token string">'f'</span>
+<span class="token punctuation">]</span>
+
+<span class="token keyword">def</span> <span class="token function">filter_surface</span><span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Cleans key values for surface tag"""</span>
+    <span class="token keyword">if</span> val <span class="token keyword">in</span> remove_list<span class="token punctuation">:</span>
+        <span class="token keyword">return</span> <span class="token boolean">True</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> <span class="token boolean">False</span>
+
+<span class="token keyword">def</span> <span class="token function">clean_surface</span><span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Cleans key values for surface tag"""</span>
+    <span class="token keyword">for</span> key <span class="token keyword">in</span> surface_dict<span class="token punctuation">.</span>keys<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> val <span class="token operator">==</span> key<span class="token punctuation">:</span>
+            val <span class="token operator">=</span> surface_dict<span class="token punctuation">.</span>get<span class="token punctuation">(</span>key<span class="token punctuation">)</span>
+    <span class="token keyword">return</span> val
+</code></pre>
+<br>
+<p><em><strong>city</strong></em><br>
+The city key required the most cleaning among those I selected, and the function I created, clean_city,<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmKeyCity.py">10</a></sup>&nbsp; has multiple steps:</p>
+<ol>
+<li>First, the function splits any city names that have multiple words.
+<ul>
+<li>round rock → [round, rock]</li>
+</ul>
+</li>
+<li>Then, it capitalizes each of those words by looping through each item in the list created when splitting the value.
+<ul>
+<li>[round, rock] → [Round, Rock]</li>
+</ul>
+</li>
+<li>Next, it puts the city names back together, and retains a space between each word.
+<ul>
+<li>[Round, Rock] → Round Rock</li>
+</ul>
+</li>
+<li>Finally, the value is compared to a dictionary to clean up any lingering incorrect city names.</li>
+</ol>
+<pre class=" language-python"><code class="prism  language-python">city_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+    <span class="token string">'Wells Branch'</span><span class="token punctuation">:</span> <span class="token string">'Austin'</span><span class="token punctuation">,</span>
+    <span class="token string">'Barton Creek'</span><span class="token punctuation">:</span> <span class="token string">'Austin'</span><span class="token punctuation">,</span>
+    <span class="token string">'Ste 128, Austin'</span><span class="token punctuation">:</span> <span class="token string">'Austin'</span><span class="token punctuation">,</span>
+    <span class="token string">'Pepe’s Tacos'</span><span class="token punctuation">:</span> <span class="token string">'Austin'</span><span class="token punctuation">,</span>
+    <span class="token string">'N Austin'</span><span class="token punctuation">:</span> <span class="token string">'Austin'</span><span class="token punctuation">,</span>
+    <span class="token string">'Austin;austin'</span><span class="token punctuation">:</span> <span class="token string">'Austin'</span><span class="token punctuation">,</span>
+    <span class="token string">'San Gabriel Village Boulevard'</span><span class="token punctuation">:</span> <span class="token string">'Georgetown'</span><span class="token punctuation">,</span>
+    <span class="token string">'Manchaca,'</span><span class="token punctuation">:</span> <span class="token string">'Manchaca'</span><span class="token punctuation">,</span>
+    <span class="token string">'Pfluggerville'</span><span class="token punctuation">:</span> <span class="token string">'Pflugerville'</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">def</span> <span class="token function">clean_city</span><span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Cleans key values for addr:city tag"""</span>
+    split <span class="token operator">=</span> val<span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">' '</span><span class="token punctuation">)</span>
+    i <span class="token operator">=</span> <span class="token number">0</span>
+    cap <span class="token operator">=</span> <span class="token string">''</span>
+    <span class="token keyword">while</span> i <span class="token operator">&lt;</span> <span class="token builtin">len</span><span class="token punctuation">(</span>split<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        x <span class="token operator">=</span> split<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span>capitalize<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">if</span> i <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">:</span>
+            cap <span class="token operator">=</span> x
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            cap <span class="token operator">=</span> cap <span class="token operator">+</span> <span class="token string">' '</span> <span class="token operator">+</span> x
+        i <span class="token operator">+=</span> <span class="token number">1</span>
+    val <span class="token operator">=</span> cap
+    <span class="token keyword">for</span> key <span class="token keyword">in</span> city_dict<span class="token punctuation">.</span>keys<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> val <span class="token operator">==</span> key<span class="token punctuation">:</span>
+            val <span class="token operator">=</span> city_dict<span class="token punctuation">.</span>get<span class="token punctuation">(</span>key<span class="token punctuation">)</span>
+    <span class="token keyword">return</span> val
+</code></pre>
+<br>
+<p><em><strong>state</strong></em><br>
+Creating a function just to filter for addr:state == TX would have been a textbook example of over-engineering a problem. Instead of creating a function, I just added that filter to the shape function outlined below.<br>
+<br></p>
+<p><strong>Transforming</strong><br>
+After the cleaning and filtering functions were developed, I wrote a function, shape_element,<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmXMLtoCSV.py">11</a></sup>&nbsp; that shapes the node and way elements of the raw xml file, and returns them as a Python dictionary.</p>
+<p>Employing that function, the cleaning functions outlined above, and several helper functions provided by Udacity for this project;<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmXMLtoCSV.py">11</a></sup>&nbsp; I cleaned, filtered, transformed, and staged the data into csv format to prepare it to be loaded into a sqlite database.</p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">import</span> cerberus
+<span class="token keyword">import</span> codecs
+<span class="token keyword">import</span> csv
+<span class="token keyword">import</span> pprint
+<span class="token keyword">import</span> re
+<span class="token keyword">import</span> xml<span class="token punctuation">.</span>etree<span class="token punctuation">.</span>ElementTree <span class="token keyword">as</span> eT
+<span class="token keyword">import</span> os
+
+<span class="token keyword">import</span> schema
+<span class="token keyword">from</span> osmKeySurface <span class="token keyword">import</span> filter_surface<span class="token punctuation">,</span> clean_surface
+<span class="token keyword">from</span> osmKeyPostcode <span class="token keyword">import</span> filter_postcode<span class="token punctuation">,</span> clean_postcode
+<span class="token keyword">from</span> osmKeyCity <span class="token keyword">import</span> clean_city
+<span class="token keyword">from</span> osmKeyBuilding <span class="token keyword">import</span> clean_building
+<span class="token keyword">from</span> TicToc <span class="token keyword">import</span> TicToc
+t <span class="token operator">=</span> TicToc<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token comment"># ========================================================================= #</span>
+<span class="token comment">#                           Define Variables                                #</span>
+<span class="token comment"># ========================================================================= #</span>
+
+OSM_PATH <span class="token operator">=</span> <span class="token string">'data/austin_texas.osm'</span>
+NODES_PATH <span class="token operator">=</span> <span class="token string">'data/csv/nodes.csv'</span>
+NODE_TAGS_PATH <span class="token operator">=</span> <span class="token string">'data/csv/nodes_tags.csv'</span>
+WAYS_PATH <span class="token operator">=</span> <span class="token string">'data/csv/ways.csv'</span>
+WAY_NODES_PATH <span class="token operator">=</span> <span class="token string">'data/csv/ways_nodes.csv'</span>
+WAY_TAGS_PATH <span class="token operator">=</span> <span class="token string">'data/csv/ways_tags.csv'</span>
+
+LOWER_COLON <span class="token operator">=</span> re<span class="token punctuation">.</span><span class="token builtin">compile</span><span class="token punctuation">(</span>r<span class="token string">'^([a-z]|_)+:([a-z]|_)+'</span><span class="token punctuation">)</span>
+PROBLEMCHARS <span class="token operator">=</span> re<span class="token punctuation">.</span><span class="token builtin">compile</span><span class="token punctuation">(</span>r<span class="token string">'[=\+/&amp;&lt;&gt;;\'"\?%#$@\,\. \t\r\n]'</span><span class="token punctuation">)</span>
+SCHEMA <span class="token operator">=</span> schema<span class="token punctuation">.</span>schema
+
+NODE_FIELDS <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">,</span> <span class="token string">'lat'</span><span class="token punctuation">,</span> <span class="token string">'lon'</span><span class="token punctuation">,</span> <span class="token string">'user'</span><span class="token punctuation">,</span> <span class="token string">'uid'</span><span class="token punctuation">,</span> <span class="token string">'version'</span><span class="token punctuation">,</span> <span class="token string">'changeset'</span><span class="token punctuation">,</span> <span class="token string">'timestamp'</span><span class="token punctuation">]</span>
+NODE_TAGS_FIELDS <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">,</span> <span class="token string">'key'</span><span class="token punctuation">,</span> <span class="token string">'value'</span><span class="token punctuation">,</span> <span class="token string">'type'</span><span class="token punctuation">]</span>
+WAY_FIELDS <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">,</span> <span class="token string">'user'</span><span class="token punctuation">,</span> <span class="token string">'uid'</span><span class="token punctuation">,</span> <span class="token string">'version'</span><span class="token punctuation">,</span> <span class="token string">'changeset'</span><span class="token punctuation">,</span> <span class="token string">'timestamp'</span><span class="token punctuation">]</span>
+WAY_TAGS_FIELDS <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">,</span> <span class="token string">'key'</span><span class="token punctuation">,</span> <span class="token string">'value'</span><span class="token punctuation">,</span> <span class="token string">'type'</span><span class="token punctuation">]</span>
+WAY_NODES_FIELDS <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">,</span> <span class="token string">'node_id'</span><span class="token punctuation">,</span> <span class="token string">'position'</span><span class="token punctuation">]</span>
+
+<span class="token comment"># ========================================================================= #</span>
+<span class="token comment">#                           Shape Function                                  #</span>
+<span class="token comment"># ========================================================================= #</span>
+
+<span class="token keyword">def</span> <span class="token function">shape_element</span><span class="token punctuation">(</span>element<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Shape node and way XML elements to Python dictionary"""</span>
+    way_attr_fields <span class="token operator">=</span> WAY_FIELDS
+    node_attr_fields <span class="token operator">=</span> NODE_FIELDS
+    problem_chars <span class="token operator">=</span> PROBLEMCHARS
+    default_tag_type <span class="token operator">=</span> <span class="token string">'regular'</span>
+
+    node_attribs <span class="token operator">=</span> <span class="token punctuation">{</span><span class="token punctuation">}</span>
+    way_attribs <span class="token operator">=</span> <span class="token punctuation">{</span><span class="token punctuation">}</span>
+    way_nodes <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    tags <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+
+    <span class="token keyword">if</span> element<span class="token punctuation">.</span>tag <span class="token operator">==</span> <span class="token string">'node'</span><span class="token punctuation">:</span>
+        <span class="token keyword">for</span> i <span class="token keyword">in</span> node_attr_fields<span class="token punctuation">:</span>
+            node_attribs<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">=</span> element<span class="token punctuation">.</span>get<span class="token punctuation">(</span>i<span class="token punctuation">)</span>
+        <span class="token keyword">for</span> j <span class="token keyword">in</span> element<span class="token punctuation">.</span><span class="token builtin">iter</span><span class="token punctuation">(</span><span class="token string">'tag'</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            key <span class="token operator">=</span> j<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'k'</span><span class="token punctuation">)</span>
+            val <span class="token operator">=</span> j<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'v'</span><span class="token punctuation">)</span>
+            <span class="token keyword">if</span> re<span class="token punctuation">.</span>match<span class="token punctuation">(</span>problem_chars<span class="token punctuation">,</span> key<span class="token punctuation">)</span><span class="token punctuation">:</span>
+                <span class="token keyword">continue</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> <span class="token string">'addr:state'</span> <span class="token operator">and</span> val <span class="token operator">!=</span> <span class="token string">'TX'</span><span class="token punctuation">:</span>
+                <span class="token keyword">continue</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> <span class="token string">'addr:postcode'</span><span class="token punctuation">:</span>
+                <span class="token keyword">if</span> filter_postcode<span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+                    <span class="token keyword">continue</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> <span class="token string">'surface'</span><span class="token punctuation">:</span>
+                <span class="token keyword">if</span> filter_surface<span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+                    <span class="token keyword">continue</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> <span class="token string">'addr:postcode'</span><span class="token punctuation">:</span>
+                val <span class="token operator">=</span> clean_postcode<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+            <span class="token keyword">elif</span> key <span class="token operator">==</span> <span class="token string">'addr:city'</span><span class="token punctuation">:</span>
+                val <span class="token operator">=</span> clean_city<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+            <span class="token keyword">elif</span> key <span class="token operator">==</span> <span class="token string">'building'</span><span class="token punctuation">:</span>
+                val <span class="token operator">=</span> clean_building<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+            <span class="token keyword">elif</span> key <span class="token operator">==</span> <span class="token string">'surface'</span><span class="token punctuation">:</span>
+                val <span class="token operator">=</span> clean_surface<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+            mat <span class="token operator">=</span> re<span class="token punctuation">.</span>match<span class="token punctuation">(</span>LOWER_COLON<span class="token punctuation">,</span> key<span class="token punctuation">)</span>
+            <span class="token keyword">if</span> mat<span class="token punctuation">:</span>
+                key_split <span class="token operator">=</span> re<span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">':'</span><span class="token punctuation">,</span> key<span class="token punctuation">,</span> maxsplit<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">)</span>
+                tags_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+                    <span class="token string">'id'</span><span class="token punctuation">:</span> node_attribs<span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+                    <span class="token string">'key'</span><span class="token punctuation">:</span> key_split<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+                    <span class="token string">'value'</span><span class="token punctuation">:</span> val<span class="token punctuation">,</span>
+                    <span class="token string">'type'</span><span class="token punctuation">:</span> key_split<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+                <span class="token punctuation">}</span>
+            <span class="token keyword">else</span><span class="token punctuation">:</span>
+                tags_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+                    <span class="token string">'id'</span><span class="token punctuation">:</span> node_attribs<span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+                    <span class="token string">'key'</span><span class="token punctuation">:</span> key<span class="token punctuation">,</span>
+                    <span class="token string">'value'</span><span class="token punctuation">:</span> val<span class="token punctuation">,</span>
+                    <span class="token string">'type'</span><span class="token punctuation">:</span> default_tag_type
+                <span class="token punctuation">}</span>
+            tags<span class="token punctuation">.</span>append<span class="token punctuation">(</span>tags_dict<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> <span class="token punctuation">{</span>
+            <span class="token string">'node'</span><span class="token punctuation">:</span> node_attribs<span class="token punctuation">,</span>
+            <span class="token string">'node_tags'</span><span class="token punctuation">:</span> tags
+        <span class="token punctuation">}</span>
+    <span class="token keyword">elif</span> element<span class="token punctuation">.</span>tag <span class="token operator">==</span> <span class="token string">'way'</span><span class="token punctuation">:</span>
+        <span class="token keyword">for</span> i <span class="token keyword">in</span> way_attr_fields<span class="token punctuation">:</span>
+            way_attribs<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">=</span> element<span class="token punctuation">.</span>get<span class="token punctuation">(</span>i<span class="token punctuation">)</span>
+        count <span class="token operator">=</span> <span class="token number">0</span>
+        <span class="token keyword">for</span> x <span class="token keyword">in</span> element<span class="token punctuation">.</span><span class="token builtin">iter</span><span class="token punctuation">(</span><span class="token string">'nd'</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            way_nodes_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+                <span class="token string">'id'</span><span class="token punctuation">:</span> way_attribs<span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+                <span class="token string">'node_id'</span><span class="token punctuation">:</span> x<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'ref'</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token string">'position'</span><span class="token punctuation">:</span> count
+            <span class="token punctuation">}</span>
+            count <span class="token operator">+=</span> <span class="token number">1</span>
+            way_nodes<span class="token punctuation">.</span>append<span class="token punctuation">(</span>way_nodes_dict<span class="token punctuation">)</span>
+        <span class="token keyword">for</span> j <span class="token keyword">in</span> element<span class="token punctuation">.</span><span class="token builtin">iter</span><span class="token punctuation">(</span><span class="token string">'tag'</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            key <span class="token operator">=</span> j<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'k'</span><span class="token punctuation">)</span>
+            val <span class="token operator">=</span> j<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'v'</span><span class="token punctuation">)</span>
+            <span class="token keyword">if</span> re<span class="token punctuation">.</span>match<span class="token punctuation">(</span>problem_chars<span class="token punctuation">,</span> key<span class="token punctuation">)</span><span class="token punctuation">:</span>
+                <span class="token keyword">continue</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> <span class="token string">'addr:state'</span> <span class="token operator">and</span> val <span class="token operator">!=</span> <span class="token string">'TX'</span><span class="token punctuation">:</span>
+                <span class="token keyword">continue</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> <span class="token string">'addr:postcode'</span><span class="token punctuation">:</span>
+                <span class="token keyword">if</span> filter_postcode<span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+                    <span class="token keyword">continue</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> <span class="token string">'surface'</span><span class="token punctuation">:</span>
+                <span class="token keyword">if</span> filter_surface<span class="token punctuation">(</span>val<span class="token punctuation">)</span><span class="token punctuation">:</span>
+                    <span class="token keyword">continue</span>
+            <span class="token keyword">if</span> key <span class="token operator">==</span> <span class="token string">'addr:postcode'</span><span class="token punctuation">:</span>
+                val <span class="token operator">=</span> clean_postcode<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+            <span class="token keyword">elif</span> key <span class="token operator">==</span> <span class="token string">'addr:city'</span><span class="token punctuation">:</span>
+                val <span class="token operator">=</span> clean_city<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+            <span class="token keyword">elif</span> key <span class="token operator">==</span> <span class="token string">'building'</span><span class="token punctuation">:</span>
+                val <span class="token operator">=</span> clean_building<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+            <span class="token keyword">elif</span> key <span class="token operator">==</span> <span class="token string">'surface'</span><span class="token punctuation">:</span>
+                val <span class="token operator">=</span> clean_surface<span class="token punctuation">(</span>val<span class="token punctuation">)</span>
+            mat <span class="token operator">=</span> re<span class="token punctuation">.</span>match<span class="token punctuation">(</span>LOWER_COLON<span class="token punctuation">,</span> key<span class="token punctuation">)</span>
+            <span class="token keyword">if</span> mat<span class="token punctuation">:</span>
+                key_split <span class="token operator">=</span> re<span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">':'</span><span class="token punctuation">,</span> key<span class="token punctuation">,</span> maxsplit<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">)</span>
+                way_tags_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+                    <span class="token string">'id'</span><span class="token punctuation">:</span> way_attribs<span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+                    <span class="token string">'key'</span><span class="token punctuation">:</span> key<span class="token punctuation">,</span>
+                    <span class="token string">'value'</span><span class="token punctuation">:</span> val<span class="token punctuation">,</span>
+                    <span class="token string">'type'</span><span class="token punctuation">:</span> key_split<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+                <span class="token punctuation">}</span>
+            <span class="token keyword">else</span><span class="token punctuation">:</span>
+                way_tags_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+                    <span class="token string">'id'</span><span class="token punctuation">:</span> way_attribs<span class="token punctuation">[</span><span class="token string">'id'</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+                    <span class="token string">'key'</span><span class="token punctuation">:</span> key<span class="token punctuation">,</span>
+                    <span class="token string">'value'</span><span class="token punctuation">:</span> val<span class="token punctuation">,</span>
+                    <span class="token string">'type'</span><span class="token punctuation">:</span> default_tag_type
+                <span class="token punctuation">}</span>
+            tags<span class="token punctuation">.</span>append<span class="token punctuation">(</span>way_tags_dict<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> <span class="token punctuation">{</span>
+            <span class="token string">'way'</span><span class="token punctuation">:</span> way_attribs<span class="token punctuation">,</span>
+            <span class="token string">'way_nodes'</span><span class="token punctuation">:</span> way_nodes<span class="token punctuation">,</span>
+            <span class="token string">'way_tags'</span><span class="token punctuation">:</span> tags
+        <span class="token punctuation">}</span>
+
+<span class="token comment"># ========================================================================= #</span>
+<span class="token comment">#                   Assistant to the Regional Functions                     #</span>
+<span class="token comment"># ========================================================================= #</span>
+
+<span class="token keyword">def</span> <span class="token function">get_element</span><span class="token punctuation">(</span>osm_file<span class="token punctuation">,</span> tags<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'node'</span><span class="token punctuation">,</span> <span class="token string">'way'</span><span class="token punctuation">,</span> <span class="token string">'relation'</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Yield element if it is the right type of tag"""</span>
+    context <span class="token operator">=</span> eT<span class="token punctuation">.</span>iterparse<span class="token punctuation">(</span>osm_file<span class="token punctuation">,</span> events<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'start'</span><span class="token punctuation">,</span> <span class="token string">'end'</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    _<span class="token punctuation">,</span> root <span class="token operator">=</span> <span class="token builtin">next</span><span class="token punctuation">(</span>context<span class="token punctuation">)</span>
+    <span class="token keyword">for</span> event<span class="token punctuation">,</span> elem <span class="token keyword">in</span> context<span class="token punctuation">:</span>
+        <span class="token keyword">if</span> event <span class="token operator">==</span> <span class="token string">'end'</span> <span class="token operator">and</span> elem<span class="token punctuation">.</span>tag <span class="token keyword">in</span> tags<span class="token punctuation">:</span>
+            <span class="token keyword">yield</span> elem
+            root<span class="token punctuation">.</span>clear<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token keyword">def</span> <span class="token function">validate_element</span><span class="token punctuation">(</span>element<span class="token punctuation">,</span> validator<span class="token punctuation">,</span> csv_schema<span class="token operator">=</span>SCHEMA<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Raise ValidationError if element does not match schema"""</span>
+    <span class="token keyword">if</span> validator<span class="token punctuation">.</span>validate<span class="token punctuation">(</span>element<span class="token punctuation">,</span> csv_schema<span class="token punctuation">)</span> <span class="token keyword">is</span> <span class="token operator">not</span> <span class="token boolean">True</span><span class="token punctuation">:</span>
+        field<span class="token punctuation">,</span> errors <span class="token operator">=</span> <span class="token builtin">next</span><span class="token punctuation">(</span><span class="token builtin">iter</span><span class="token punctuation">(</span>validator<span class="token punctuation">.</span>errors<span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        message_string <span class="token operator">=</span> <span class="token triple-quoted-string string">'''\nElement of type '{0}' has the following errors:\n{1}'''</span>
+        error_string <span class="token operator">=</span> pprint<span class="token punctuation">.</span>pformat<span class="token punctuation">(</span>errors<span class="token punctuation">)</span>
+        <span class="token keyword">raise</span> Exception<span class="token punctuation">(</span>message_string<span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span>field<span class="token punctuation">,</span> error_string<span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+<span class="token keyword">class</span> <span class="token class-name">UnicodeDictWriter</span><span class="token punctuation">(</span>csv<span class="token punctuation">.</span>DictWriter<span class="token punctuation">,</span> <span class="token builtin">object</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Extend csv.DictWriter to handle Unicode input"""</span>
+    <span class="token keyword">def</span> <span class="token function">writerow</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> row<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>UnicodeDictWriter<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>writerow<span class="token punctuation">(</span>row
+    <span class="token keyword">def</span> <span class="token function">writerows</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> rows<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">for</span> row <span class="token keyword">in</span> rows<span class="token punctuation">:</span>
+            self<span class="token punctuation">.</span>writerow<span class="token punctuation">(</span>row<span class="token punctuation">)</span>
+
+<span class="token comment"># ========================================================================= #</span>
+<span class="token comment">#                           Main Function                                   #</span>
+<span class="token comment"># ========================================================================= #</span>
+
+<span class="token keyword">def</span> <span class="token function">process_map</span><span class="token punctuation">(</span>file_in<span class="token punctuation">,</span> validate<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Iteratively process each XML element and write to csv(s)"""</span>
+    <span class="token keyword">with</span> codecs<span class="token punctuation">.</span><span class="token builtin">open</span><span class="token punctuation">(</span>NODES_PATH<span class="token punctuation">,</span> <span class="token string">'w'</span><span class="token punctuation">,</span> encoding<span class="token operator">=</span><span class="token string">'utf8'</span><span class="token punctuation">)</span> <span class="token keyword">as</span> nodes_file<span class="token punctuation">,</span> \
+            codecs<span class="token punctuation">.</span><span class="token builtin">open</span><span class="token punctuation">(</span>NODE_TAGS_PATH<span class="token punctuation">,</span> <span class="token string">'w'</span><span class="token punctuation">,</span> encoding<span class="token operator">=</span><span class="token string">'utf8'</span><span class="token punctuation">)</span> <span class="token keyword">as</span> nodes_tags_file<span class="token punctuation">,</span> \
+            codecs<span class="token punctuation">.</span><span class="token builtin">open</span><span class="token punctuation">(</span>WAYS_PATH<span class="token punctuation">,</span> <span class="token string">'w'</span><span class="token punctuation">,</span> encoding<span class="token operator">=</span><span class="token string">'utf8'</span><span class="token punctuation">)</span> <span class="token keyword">as</span> ways_file<span class="token punctuation">,</span> \
+            codecs<span class="token punctuation">.</span><span class="token builtin">open</span><span class="token punctuation">(</span>WAY_NODES_PATH<span class="token punctuation">,</span> <span class="token string">'w'</span><span class="token punctuation">,</span> encoding<span class="token operator">=</span><span class="token string">'utf8'</span><span class="token punctuation">)</span> <span class="token keyword">as</span> way_nodes_file<span class="token punctuation">,</span> \
+            codecs<span class="token punctuation">.</span><span class="token builtin">open</span><span class="token punctuation">(</span>WAY_TAGS_PATH<span class="token punctuation">,</span> <span class="token string">'w'</span><span class="token punctuation">,</span> encoding<span class="token operator">=</span><span class="token string">'utf8'</span><span class="token punctuation">)</span> <span class="token keyword">as</span> way_tags_file<span class="token punctuation">:</span>
+        nodes_writer <span class="token operator">=</span> UnicodeDictWriter<span class="token punctuation">(</span>nodes_file<span class="token punctuation">,</span> NODE_FIELDS<span class="token punctuation">)</span>
+        node_tags_writer <span class="token operator">=</span> UnicodeDictWriter<span class="token punctuation">(</span>nodes_tags_file<span class="token punctuation">,</span> NODE_TAGS_FIELDS<span class="token punctuation">)</span>
+        ways_writer <span class="token operator">=</span> UnicodeDictWriter<span class="token punctuation">(</span>ways_file<span class="token punctuation">,</span> WAY_FIELDS<span class="token punctuation">)</span>
+        way_nodes_writer <span class="token operator">=</span> UnicodeDictWriter<span class="token punctuation">(</span>way_nodes_file<span class="token punctuation">,</span> WAY_NODES_FIELDS<span class="token punctuation">)</span>
+        way_tags_writer <span class="token operator">=</span> UnicodeDictWriter<span class="token punctuation">(</span>way_tags_file<span class="token punctuation">,</span> WAY_TAGS_FIELDS<span class="token punctuation">)</span>
+        nodes_writer<span class="token punctuation">.</span>writeheader<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        node_tags_writer<span class="token punctuation">.</span>writeheader<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        ways_writer<span class="token punctuation">.</span>writeheader<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        way_nodes_writer<span class="token punctuation">.</span>writeheader<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        way_tags_writer<span class="token punctuation">.</span>writeheader<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        validator <span class="token operator">=</span> cerberus<span class="token punctuation">.</span>Validator<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">for</span> element <span class="token keyword">in</span> get_element<span class="token punctuation">(</span>file_in<span class="token punctuation">,</span> tags<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'node'</span><span class="token punctuation">,</span> <span class="token string">'way'</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            elem <span class="token operator">=</span> shape_element<span class="token punctuation">(</span>element<span class="token punctuation">)</span>
+            <span class="token keyword">if</span> elem<span class="token punctuation">:</span>
+                <span class="token keyword">if</span> validate <span class="token keyword">is</span> <span class="token boolean">True</span><span class="token punctuation">:</span>
+                    validate_element<span class="token punctuation">(</span>elem<span class="token punctuation">,</span> validator<span class="token punctuation">)</span>
+                <span class="token keyword">if</span> element<span class="token punctuation">.</span>tag <span class="token operator">==</span> <span class="token string">'node'</span><span class="token punctuation">:</span>
+                    nodes_writer<span class="token punctuation">.</span>writerow<span class="token punctuation">(</span>elem<span class="token punctuation">[</span><span class="token string">'node'</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+                    node_tags_writer<span class="token punctuation">.</span>writerows<span class="token punctuation">(</span>elem<span class="token punctuation">[</span><span class="token string">'node_tags'</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+                <span class="token keyword">elif</span> element<span class="token punctuation">.</span>tag <span class="token operator">==</span> <span class="token string">'way'</span><span class="token punctuation">:</span>
+                    ways_writer<span class="token punctuation">.</span>writerow<span class="token punctuation">(</span>elem<span class="token punctuation">[</span><span class="token string">'way'</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+                    way_nodes_writer<span class="token punctuation">.</span>writerows<span class="token punctuation">(</span>elem<span class="token punctuation">[</span><span class="token string">'way_nodes'</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+                    way_tags_writer<span class="token punctuation">.</span>writerows<span class="token punctuation">(</span>elem<span class="token punctuation">[</span><span class="token string">'way_tags'</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+
+<span class="token comment"># ========================================================================= #</span>
+<span class="token comment">#                               Execute                                     #</span>
+<span class="token comment"># ========================================================================= #</span>
+
+<span class="token keyword">if</span> __name__ <span class="token operator">==</span> <span class="token string">'__main__'</span><span class="token punctuation">:</span>
+    py <span class="token operator">=</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>basename<span class="token punctuation">(</span>__file__<span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'\nExecuting '</span> <span class="token operator">+</span> py <span class="token operator">+</span> <span class="token string">'....'</span><span class="token punctuation">)</span>
+    t<span class="token punctuation">.</span>tic<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    process_map<span class="token punctuation">(</span>OSM_PATH<span class="token punctuation">,</span> validate<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">)</span>
+    t<span class="token punctuation">.</span>toc<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<br>
+<p><strong>Problems Encountered</strong><br>
+I encountered several problems while working with the Austin OpenStreetMap data. Chief among them was file size. I did not anticipate how resource intensive working with a dataset of this size would be. If I were to do this project again I would select a smaller map to work with. As you can see, some of the files used are quite large.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/py/osmSizes.py">12</a></sup></p>
+<pre class=" language-python"><code class="prism  language-python"><span class="token keyword">import</span> os
+<span class="token keyword">import</span> pandas <span class="token keyword">as</span> pd
+<span class="token keyword">from</span> TicToc <span class="token keyword">import</span> TicToc
+t <span class="token operator">=</span> TicToc<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token comment"># ========================================================================= #</span>
+<span class="token comment">#                           Define Variables                                #</span>
+<span class="token comment"># ========================================================================= #</span>
+
+root_data <span class="token operator">=</span> <span class="token string">'/Users/ajp/dsProjects/workspace/osmAustin/data/'</span>
+root_csv <span class="token operator">=</span> root_data <span class="token operator">+</span> <span class="token string">'csv/'</span>
+
+osm <span class="token operator">=</span> <span class="token string">'austin_texas.osm'</span>
+sample <span class="token operator">=</span> <span class="token string">'sample_atx.osm'</span>
+nodes_tags <span class="token operator">=</span> <span class="token string">'nodes_tags.csv'</span>
+nodes <span class="token operator">=</span> <span class="token string">'nodes.csv'</span>
+ways_nodes <span class="token operator">=</span> <span class="token string">'ways_nodes.csv'</span>
+ways_tags <span class="token operator">=</span> <span class="token string">'ways_tags.csv'</span>
+ways <span class="token operator">=</span> <span class="token string">'ways.csv'</span>
+
+path_osm <span class="token operator">=</span> root_data <span class="token operator">+</span> osm
+path_sample <span class="token operator">=</span> root_data <span class="token operator">+</span> sample
+path_nodes_tags <span class="token operator">=</span> root_csv <span class="token operator">+</span> nodes_tags
+path_nodes <span class="token operator">=</span> root_csv <span class="token operator">+</span> nodes
+path_ways_nodes <span class="token operator">=</span> root_csv <span class="token operator">+</span> ways_nodes
+path_ways_tags <span class="token operator">=</span> root_csv <span class="token operator">+</span> ways_tags
+path_ways <span class="token operator">=</span> root_csv <span class="token operator">+</span> ways
+
+<span class="token comment"># ========================================================================= #</span>
+<span class="token comment">#                             Size Function                                 #</span>
+<span class="token comment"># ========================================================================= #</span>
+
+
+<span class="token keyword">def</span> <span class="token function">get_size</span><span class="token punctuation">(</span>filepath<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Get file size and return string with appropriate unit"""</span>
+    size_bytes <span class="token operator">=</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>getsize<span class="token punctuation">(</span>filepath<span class="token punctuation">)</span>
+    <span class="token keyword">if</span> size_bytes <span class="token operator">&lt;</span> <span class="token number">1024</span><span class="token punctuation">:</span>
+        size_bytes <span class="token operator">=</span> <span class="token builtin">round</span><span class="token punctuation">(</span>size_bytes<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span>
+        size <span class="token operator">=</span> f<span class="token string">'{size_bytes} B'</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        size_kilobytes <span class="token operator">=</span> size_bytes <span class="token operator">/</span> <span class="token number">1024</span>
+        <span class="token keyword">if</span> size_kilobytes <span class="token operator">&lt;</span> <span class="token number">1024</span><span class="token punctuation">:</span>
+            size_kilobytes <span class="token operator">=</span> <span class="token builtin">round</span><span class="token punctuation">(</span>size_kilobytes<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span>
+            size <span class="token operator">=</span> f<span class="token string">'{size_kilobytes} KB'</span>
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            size_megabytes <span class="token operator">=</span> size_kilobytes <span class="token operator">/</span> <span class="token number">1024</span>
+            <span class="token keyword">if</span> size_megabytes <span class="token operator">&lt;</span> <span class="token number">1024</span><span class="token punctuation">:</span>
+                size_megabytes <span class="token operator">=</span> <span class="token builtin">round</span><span class="token punctuation">(</span>size_megabytes<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span>
+                size <span class="token operator">=</span> f<span class="token string">'{size_megabytes} MB'</span>
+            <span class="token keyword">else</span><span class="token punctuation">:</span>
+                size_gigabytes <span class="token operator">=</span> size_megabytes <span class="token operator">/</span> <span class="token number">1024</span>
+                <span class="token keyword">if</span> size_gigabytes <span class="token operator">&lt;</span> <span class="token number">1024</span><span class="token punctuation">:</span>
+                    size_gigabytes <span class="token operator">=</span> <span class="token builtin">round</span><span class="token punctuation">(</span>size_gigabytes<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span>
+                    size <span class="token operator">=</span> f<span class="token string">'{size_gigabytes} GB'</span>
+                <span class="token keyword">else</span><span class="token punctuation">:</span>
+                    size <span class="token operator">=</span> <span class="token string">"Wow, that's huge."</span>
+    <span class="token keyword">return</span> size
+
+<span class="token comment"># ========================================================================= #</span>
+<span class="token comment">#                               Execute                                     #</span>
+<span class="token comment"># ========================================================================= #</span>
+
+<span class="token keyword">if</span> __name__ <span class="token operator">==</span> <span class="token string">'__main__'</span><span class="token punctuation">:</span>
+    py <span class="token operator">=</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>basename<span class="token punctuation">(</span>__file__<span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'\nExecuting '</span> <span class="token operator">+</span> py <span class="token operator">+</span> <span class="token string">'....'</span><span class="token punctuation">)</span>
+    t<span class="token punctuation">.</span>tic<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    osm_size <span class="token operator">=</span> get_size<span class="token punctuation">(</span>path_osm<span class="token punctuation">)</span>
+    sample_size <span class="token operator">=</span> get_size<span class="token punctuation">(</span>path_sample<span class="token punctuation">)</span>
+    nodes_tags_size <span class="token operator">=</span> get_size<span class="token punctuation">(</span>path_nodes_tags<span class="token punctuation">)</span>
+    nodes_size <span class="token operator">=</span> get_size<span class="token punctuation">(</span>path_nodes<span class="token punctuation">)</span>
+    ways_nodes_size <span class="token operator">=</span> get_size<span class="token punctuation">(</span>path_ways_nodes<span class="token punctuation">)</span>
+    ways_tags_size <span class="token operator">=</span> get_size<span class="token punctuation">(</span>path_ways_tags<span class="token punctuation">)</span>
+    ways_size <span class="token operator">=</span> get_size<span class="token punctuation">(</span>path_ways<span class="token punctuation">)</span>
+
+    names <span class="token operator">=</span> <span class="token punctuation">[</span>osm<span class="token punctuation">,</span> sample<span class="token punctuation">,</span> nodes_tags<span class="token punctuation">,</span> nodes<span class="token punctuation">,</span> ways_nodes<span class="token punctuation">,</span> ways_tags<span class="token punctuation">,</span> ways<span class="token punctuation">]</span>
+    sizes <span class="token operator">=</span> <span class="token punctuation">[</span>osm_size<span class="token punctuation">,</span> sample_size<span class="token punctuation">,</span> nodes_tags_size<span class="token punctuation">,</span> nodes_size<span class="token punctuation">,</span> ways_nodes_size<span class="token punctuation">,</span> ways_tags_size<span class="token punctuation">,</span> ways_size<span class="token punctuation">]</span>
+
+    sizes_dict <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token string">'name'</span><span class="token punctuation">:</span> names<span class="token punctuation">,</span>
+        <span class="token string">'size'</span><span class="token punctuation">:</span> sizes
+    <span class="token punctuation">}</span>
+
+    sizes_df <span class="token operator">=</span> pd<span class="token punctuation">.</span>DataFrame<span class="token punctuation">(</span>data<span class="token operator">=</span>sizes_dict<span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span>sizes_df<span class="token punctuation">)</span>
+    t<span class="token punctuation">.</span>toc<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<br>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">name</th>
+<th align="right">size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">0</td>
+<td align="left">austin_texas.osm</td>
+<td align="right">1.66 GB</td>
+</tr>
+<tr>
+<td align="left">1</td>
+<td align="left">sample_atx.osm</td>
+<td align="right">40.06 MB</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">nodes_tags.csv</td>
+<td align="right">13.8 MB</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">nodes.csv</td>
+<td align="right">696.06 MB</td>
+</tr>
+<tr>
+<td align="left">4</td>
+<td align="left">ways_nodes.csv</td>
+<td align="right">203.81 MB</td>
+</tr>
+<tr>
+<td align="left">5</td>
+<td align="left">ways_tags.csv</td>
+<td align="right">85.79 MB</td>
+</tr>
+<tr>
+<td align="left">6</td>
+<td align="left">ways.csv</td>
+<td align="right">56.83 MB</td>
+</tr>
+</tbody>
+</table><br>
+<p>To work through this problem, I created a sample file that only contains elements with ways tags for addr:state=TX. This step significantly sped up testing and development, reducing the working file size from 1.79 GB to 42 MB. I did this with the java-based osmosis tool used earlier in this document.<sup><a href="https://wiki.openstreetmap.org/wiki/Osmosis/Examples">3</a></sup></p>
+<pre class=" language-zsh"><code class="prism  language-zsh"># get sample dataset for testing/development
+osmosis --rx file=austin_texas.osm --tf accept-ways addr:state=TX --un --wx sample_atx.osm
+</code></pre>
+<br>
+<p>I also had a little trouble finding data to clean. Many of the keys’ values were already very clean. I suspect that since Austin is a tech city other students and hobbyists like myself have done similar projects and cleaned the OpenStreetMap data for this metropolitan area.<br>
+<br></p>
+<p><strong>Sqlite Database</strong><br>
+After the data was cleaned, I created a sqlite database.<sup><a href="https://www.sqlite.org/index.html">4</a></sup>&nbsp; Then, I created a schema in that database to match the schema of my csv files. After that, I loaded the data into their respective tables.</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">create</span> <span class="token keyword">table</span> nodes
+<span class="token punctuation">(</span>
+    id        <span class="token keyword">integer</span> <span class="token operator">not</span> <span class="token boolean">null</span>
+        <span class="token keyword">constraint</span> nodes_pk
+            <span class="token keyword">primary</span> <span class="token keyword">key</span><span class="token punctuation">,</span>
+    lat       <span class="token keyword">real</span><span class="token punctuation">,</span>
+    lon       <span class="token keyword">real</span><span class="token punctuation">,</span>
+    <span class="token keyword">user</span>      <span class="token keyword">text</span><span class="token punctuation">,</span>
+    uid       <span class="token keyword">integer</span><span class="token punctuation">,</span>
+    version   <span class="token keyword">integer</span><span class="token punctuation">,</span>
+    changeset <span class="token keyword">integer</span><span class="token punctuation">,</span>
+    <span class="token keyword">timestamp</span> <span class="token keyword">text</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+<span class="token keyword">create</span> <span class="token keyword">table</span> nodes_tags
+<span class="token punctuation">(</span>
+    id    <span class="token keyword">integer</span>
+        <span class="token keyword">references</span> nodes<span class="token punctuation">,</span>
+    <span class="token keyword">key</span>   <span class="token keyword">text</span><span class="token punctuation">,</span>
+    <span class="token keyword">value</span> <span class="token keyword">text</span><span class="token punctuation">,</span>
+    <span class="token keyword">type</span>  <span class="token keyword">text</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+<span class="token keyword">create</span> <span class="token keyword">table</span> ways
+<span class="token punctuation">(</span>
+    id        <span class="token keyword">integer</span> <span class="token operator">not</span> <span class="token boolean">null</span>
+        <span class="token keyword">constraint</span> ways_pk
+            <span class="token keyword">primary</span> <span class="token keyword">key</span><span class="token punctuation">,</span>
+    <span class="token keyword">user</span>      <span class="token keyword">text</span><span class="token punctuation">,</span>
+    uid       <span class="token keyword">integer</span><span class="token punctuation">,</span>
+    version   <span class="token keyword">text</span><span class="token punctuation">,</span>
+    changeset <span class="token keyword">integer</span><span class="token punctuation">,</span>
+    <span class="token keyword">timestamp</span> <span class="token keyword">text</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+<span class="token keyword">create</span> <span class="token keyword">table</span> ways_nodes
+<span class="token punctuation">(</span>
+    id       <span class="token keyword">integer</span> <span class="token operator">not</span> <span class="token boolean">null</span>
+        <span class="token keyword">references</span> ways<span class="token punctuation">,</span>
+    node_id  <span class="token keyword">integer</span> <span class="token operator">not</span> <span class="token boolean">null</span>
+        <span class="token keyword">references</span> nodes<span class="token punctuation">,</span>
+    position <span class="token keyword">integer</span> <span class="token operator">not</span> <span class="token boolean">null</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+<span class="token keyword">create</span> <span class="token keyword">table</span> ways_tags
+<span class="token punctuation">(</span>
+    id    <span class="token keyword">integer</span> <span class="token operator">not</span> <span class="token boolean">null</span>
+        <span class="token keyword">references</span> ways<span class="token punctuation">,</span>
+    <span class="token keyword">key</span>   <span class="token keyword">text</span>    <span class="token operator">not</span> <span class="token boolean">null</span><span class="token punctuation">,</span>
+    <span class="token keyword">value</span> <span class="token keyword">text</span>    <span class="token operator">not</span> <span class="token boolean">null</span><span class="token punctuation">,</span>
+    <span class="token keyword">type</span>  <span class="token keyword">text</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2 id="overview-of-the-data">Overview of the Data</h2>
+<p><strong>SQL Stats</strong><br>
+Before digging into the dataset, I took a look at some database stats to get an idea of how much data I’d be working with. To generate those stats, I used another command-line utility program called sqlite3_analyzer.<sup><a href="https://www.sqlite.org/sqlanalyze.html">15</a></sup></p>
+<pre class=" language-zsh"><code class="prism  language-zsh">sqlite3_analyzeer --stats osmDB.sqlite
+</code></pre>
+<br>
+<p>Then, I loaded the stats into a table in my database.<sup><a href="https://github.com/BronzeToad/osmAustin/tree/main/sql/sql_stats">16</a></sup></p>
+<p>The insert statements for each set of statistics are extremely long, so I’ll leave them out of this document. However, they can be found in this repo for reference.<sup><a href="https://github.com/BronzeToad/osmAustin/tree/main/sql/sql_stats">16</a></sup></p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">BEGIN</span><span class="token punctuation">;</span>
+<span class="token keyword">CREATE</span> <span class="token keyword">TABLE</span> stats<span class="token punctuation">(</span>
+    name       STRING<span class="token punctuation">,</span>           <span class="token comment">/* Name of table or index */</span>
+    path       <span class="token keyword">INTEGER</span><span class="token punctuation">,</span>          <span class="token comment">/* Path to page from root */</span>
+    pageno     <span class="token keyword">INTEGER</span><span class="token punctuation">,</span>          <span class="token comment">/* Page number */</span>
+    pagetype   STRING<span class="token punctuation">,</span>           <span class="token comment">/* 'internal', 'leaf' or 'overflow' */</span>
+    ncell      <span class="token keyword">INTEGER</span><span class="token punctuation">,</span>          <span class="token comment">/* Cells on page (0 for overflow) */</span>
+    payload    <span class="token keyword">INTEGER</span><span class="token punctuation">,</span>          <span class="token comment">/* Bytes of payload on this page */</span>
+    unused     <span class="token keyword">INTEGER</span><span class="token punctuation">,</span>          <span class="token comment">/* Bytes of unused space on this page */</span>
+    mx_payload <span class="token keyword">INTEGER</span><span class="token punctuation">,</span>          <span class="token comment">/* Largest payload size of all cells */</span>
+    pgoffset   <span class="token keyword">INTEGER</span><span class="token punctuation">,</span>          <span class="token comment">/* Offset of page in file */</span>
+    pgsize     <span class="token keyword">INTEGER</span>           <span class="token comment">/* Size of the page */</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">COMMIT</span><span class="token punctuation">;</span>
+</code></pre>
+<br>
+<p>After the stats table was created, I wrote a simple query to check table sizes.<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/sql/osmDB_table_sizes.sql">17</a></sup></p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span> name <span class="token keyword">AS</span> table_name
+     <span class="token punctuation">,</span> <span class="token keyword">CASE</span>
+           <span class="token keyword">WHEN</span> bytes <span class="token operator">&lt;</span> <span class="token number">1024</span> <span class="token keyword">THEN</span> <span class="token punctuation">(</span>bytes <span class="token operator">||</span> <span class="token string">' B'</span><span class="token punctuation">)</span>
+           <span class="token keyword">WHEN</span> kilobytes <span class="token operator">&lt;</span> <span class="token number">1024</span> <span class="token keyword">THEN</span> <span class="token function">ROUND</span><span class="token punctuation">(</span>kilobytes<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">||</span> <span class="token string">' KB'</span>
+           <span class="token keyword">ELSE</span> <span class="token function">ROUND</span><span class="token punctuation">(</span>megabytes<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">||</span> <span class="token string">' MB'</span> <span class="token keyword">END</span> <span class="token keyword">AS</span> table_size
+<span class="token keyword">FROM</span> <span class="token punctuation">(</span>
+         <span class="token keyword">SELECT</span> name
+              <span class="token punctuation">,</span> <span class="token function">SUM</span><span class="token punctuation">(</span>payload<span class="token punctuation">)</span> <span class="token keyword">as</span> bytes
+              <span class="token punctuation">,</span> CAST<span class="token punctuation">(</span><span class="token function">SUM</span><span class="token punctuation">(</span>payload<span class="token punctuation">)</span> <span class="token keyword">AS</span> <span class="token keyword">FLOAT</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">1024</span> <span class="token keyword">AS</span> kilobytes
+              <span class="token punctuation">,</span> <span class="token punctuation">(</span>CAST<span class="token punctuation">(</span><span class="token function">SUM</span><span class="token punctuation">(</span>payload<span class="token punctuation">)</span> <span class="token keyword">AS</span> <span class="token keyword">FLOAT</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">1024</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">1024</span> <span class="token keyword">AS</span> megabytes
+         <span class="token keyword">FROM</span> stats
+         <span class="token keyword">GROUP</span> <span class="token keyword">BY</span> name
+     <span class="token punctuation">)</span>
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> bytes <span class="token keyword">DESC</span><span class="token punctuation">;</span>
+</code></pre>
+<br>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">table_name</th>
+<th align="right">table_size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">nodes</td>
+<td align="right">528.53 MB</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">ways_nodes</td>
+<td align="right">123.58 MB</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">ways_tags</td>
+<td align="right">73.9 MB</td>
+</tr>
+<tr>
+<td align="left">4</td>
+<td align="left">ways</td>
+<td align="right">42.98 MB</td>
+</tr>
+<tr>
+<td align="left">5</td>
+<td align="left">nodes_tags</td>
+<td align="right">12.23 MB</td>
+</tr>
+<tr>
+<td align="left">6</td>
+<td align="left">sqlite_schema</td>
+<td align="right">2.33 KB</td>
+</tr>
+</tbody>
+</table><br>
+<p><strong>Analysis</strong><br>
+Now that the stats were collected I could start analyzing the clean data. As I was analyzing this dataset, I wrote several queries<sup><a href="https://github.com/BronzeToad/osmAustin/blob/ad18e1abb61ffd0f25eb6eeaab1083cdb7fbd2b7/sql/osmDB_queries.sql">18</a></sup>&nbsp; to answer some investigative questions:</p>
+<p>How many people have contributed to the Austin OpenStreetMap project?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span> <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token keyword">DISTINCT</span> uid<span class="token punctuation">)</span> <span class="token keyword">AS</span> contributors  
+<span class="token keyword">FROM</span> <span class="token punctuation">(</span>  
+          <span class="token keyword">SELECT</span> uid <span class="token keyword">FROM</span> nodes  
+        <span class="token keyword">UNION</span> <span class="token keyword">ALL</span>  
+          <span class="token keyword">SELECT</span> uid <span class="token keyword">FROM</span> ways  
+      <span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="right">contributors</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="right">2,973</td>
+</tr>
+</tbody>
+</table><br>
+<p>Who are the top contributors?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span>  uid<span class="token punctuation">,</span>  
+        <span class="token keyword">user</span><span class="token punctuation">,</span>  
+        <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> contributions  
+<span class="token keyword">FROM</span> <span class="token punctuation">(</span>  
+         <span class="token keyword">SELECT</span> uid<span class="token punctuation">,</span> <span class="token keyword">user</span> <span class="token keyword">FROM</span> nodes  
+       <span class="token keyword">UNION</span> <span class="token keyword">ALL</span>  
+         <span class="token keyword">SELECT</span> uid<span class="token punctuation">,</span> <span class="token keyword">user</span> <span class="token keyword">FROM</span> ways  
+      <span class="token punctuation">)</span>  
+<span class="token keyword">GROUP</span> <span class="token keyword">BY</span> uid<span class="token punctuation">,</span> <span class="token keyword">user</span>  
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> contributions <span class="token keyword">DESC</span>  
+<span class="token keyword">LIMIT</span> <span class="token number">10</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">uid</th>
+<th align="left">user</th>
+<th align="right">contributions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">3369502</td>
+<td align="left">patisilva_atxbuildings</td>
+<td align="right">2,638,615</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">3370181</td>
+<td align="left">ccjjmartin_atxbuildings</td>
+<td align="right">1,257,245</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">3405475</td>
+<td align="left">ccjjmartin__atxbuildings</td>
+<td align="right">920,175</td>
+</tr>
+<tr>
+<td align="left">4</td>
+<td align="left">3341346</td>
+<td align="left">wilsaj_atxbuildings</td>
+<td align="right">349,180</td>
+</tr>
+<tr>
+<td align="left">5</td>
+<td align="left">3341321</td>
+<td align="left">jseppi_atxbuildings</td>
+<td align="right">284,518</td>
+</tr>
+<tr>
+<td align="left">6</td>
+<td align="left">147510</td>
+<td align="left">woodpeck_fixbot</td>
+<td align="right">179,918</td>
+</tr>
+<tr>
+<td align="left">7</td>
+<td align="left">3367383</td>
+<td align="left">kkt_atxbuildings</td>
+<td align="right">155,199</td>
+</tr>
+<tr>
+<td align="left">8</td>
+<td align="left">3409435</td>
+<td align="left">lyzidiamond_atxbuildings</td>
+<td align="right">150,603</td>
+</tr>
+<tr>
+<td align="left">9</td>
+<td align="left">5446055</td>
+<td align="left">torapa</td>
+<td align="right">131,329</td>
+</tr>
+<tr>
+<td align="left">10</td>
+<td align="left">12056179</td>
+<td align="left">Milroy1812</td>
+<td align="right">124,175</td>
+</tr>
+</tbody>
+</table><br>
+<p>How many total contributions are made each year?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span>  year<span class="token punctuation">,</span>  
+        <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> contributions  
+<span class="token keyword">FROM</span> <span class="token punctuation">(</span>  
+         <span class="token keyword">SELECT</span> SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> year <span class="token keyword">FROM</span> nodes  
+       <span class="token keyword">UNION</span> <span class="token keyword">ALL</span>  
+         <span class="token keyword">SELECT</span> SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> year <span class="token keyword">FROM</span> ways  
+      <span class="token punctuation">)</span>  
+<span class="token keyword">GROUP</span> <span class="token keyword">BY</span> year  
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> year<span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">year</th>
+<th align="right">contributions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">2007</td>
+<td align="right">2,111</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">2008</td>
+<td align="right">18,020</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">2009</td>
+<td align="right">223,961</td>
+</tr>
+<tr>
+<td align="left">4</td>
+<td align="left">2010</td>
+<td align="right">20,007</td>
+</tr>
+<tr>
+<td align="left">5</td>
+<td align="left">2011</td>
+<td align="right">44,811</td>
+</tr>
+<tr>
+<td align="left">6</td>
+<td align="left">2012</td>
+<td align="right">112,824</td>
+</tr>
+<tr>
+<td align="left">7</td>
+<td align="left">2013</td>
+<td align="right">62,621</td>
+</tr>
+<tr>
+<td align="left">8</td>
+<td align="left">2014</td>
+<td align="right">97,015</td>
+</tr>
+<tr>
+<td align="left">9</td>
+<td align="left">2015</td>
+<td align="right">5,958,603</td>
+</tr>
+<tr>
+<td align="left">10</td>
+<td align="left">2016</td>
+<td align="right">73,128</td>
+</tr>
+<tr>
+<td align="left">11</td>
+<td align="left">2017</td>
+<td align="right">79,173</td>
+</tr>
+<tr>
+<td align="left">12</td>
+<td align="left">2018</td>
+<td align="right">227,833</td>
+</tr>
+<tr>
+<td align="left">13</td>
+<td align="left">2019</td>
+<td align="right">581,022</td>
+</tr>
+<tr>
+<td align="left">14</td>
+<td align="left">2020</td>
+<td align="right">534,813</td>
+</tr>
+<tr>
+<td align="left">15</td>
+<td align="left">2021</td>
+<td align="right">754,611</td>
+</tr>
+</tbody>
+</table><br>
+<p>Which years had the most contributions?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span>  year<span class="token punctuation">,</span>  
+        <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> contributions  
+<span class="token keyword">FROM</span> <span class="token punctuation">(</span>  
+         <span class="token keyword">SELECT</span> SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> year <span class="token keyword">FROM</span> nodes  
+       <span class="token keyword">UNION</span> <span class="token keyword">ALL</span>  
+         <span class="token keyword">SELECT</span> SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> year <span class="token keyword">FROM</span> ways  
+      <span class="token punctuation">)</span>  
+<span class="token keyword">GROUP</span> <span class="token keyword">BY</span> year  
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> contributions <span class="token keyword">DESC</span>  
+<span class="token keyword">LIMIT</span> <span class="token number">3</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">year</th>
+<th align="right">contributions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">2015</td>
+<td align="right">5,958,603</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">2021</td>
+<td align="right">754,611</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">2019</td>
+<td align="right">581,022</td>
+</tr>
+</tbody>
+</table><br>
+<p>During which months are the contributors most active?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span>  <span class="token keyword">CASE</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'01'</span> <span class="token keyword">THEN</span> <span class="token string">'January'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'02'</span> <span class="token keyword">THEN</span> <span class="token string">'February'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'03'</span> <span class="token keyword">THEN</span> <span class="token string">'March'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'04'</span> <span class="token keyword">THEN</span> <span class="token string">'April'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'05'</span> <span class="token keyword">THEN</span> <span class="token string">'May'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'06'</span> <span class="token keyword">THEN</span> <span class="token string">'June'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'07'</span> <span class="token keyword">THEN</span> <span class="token string">'July'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'08'</span> <span class="token keyword">THEN</span> <span class="token string">'August'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'09'</span> <span class="token keyword">THEN</span> <span class="token string">'September'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'10'</span> <span class="token keyword">THEN</span> <span class="token string">'October'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'11'</span> <span class="token keyword">THEN</span> <span class="token string">'November'</span>  
+          <span class="token keyword">WHEN</span> mon <span class="token operator">=</span> <span class="token string">'12'</span> <span class="token keyword">THEN</span> <span class="token string">'December'</span>  
+        <span class="token keyword">END</span> <span class="token keyword">AS</span> month<span class="token punctuation">,</span>  
+        <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> contributions  
+<span class="token keyword">FROM</span> <span class="token punctuation">(</span>  
+         <span class="token keyword">SELECT</span> SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">6</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> mon <span class="token keyword">FROM</span> nodes  
+       <span class="token keyword">UNION</span> <span class="token keyword">ALL</span>  
+         <span class="token keyword">SELECT</span> SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">6</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> mon <span class="token keyword">FROM</span> ways  
+      <span class="token punctuation">)</span>  
+<span class="token keyword">GROUP</span> <span class="token keyword">BY</span> month  
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> mon
+<span class="token keyword">LIMIT</span> <span class="token number">3</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">month</th>
+<th align="right">contributions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">May</td>
+<td align="right">153,204</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">September</td>
+<td align="right">211,860</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">April</td>
+<td align="right">215,569</td>
+</tr>
+</tbody>
+</table><br>
+<p>What are the average monthly and yearly contributions?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span>  <span class="token function">SUM</span><span class="token punctuation">(</span>contributions<span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token keyword">DISTINCT</span> year<span class="token punctuation">)</span> <span class="token keyword">AS</span> avg_yearly<span class="token punctuation">,</span>  
+        <span class="token function">SUM</span><span class="token punctuation">(</span>contributions<span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token keyword">DISTINCT</span> month<span class="token punctuation">)</span> <span class="token keyword">AS</span> avg_monthly  
+<span class="token keyword">FROM</span> <span class="token punctuation">(</span>  
+        <span class="token keyword">SELECT</span>  year<span class="token punctuation">,</span>  
+                month<span class="token punctuation">,</span>  
+                <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> contributions  
+        <span class="token keyword">FROM</span> <span class="token punctuation">(</span>  
+                 <span class="token keyword">SELECT</span>  SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> year<span class="token punctuation">,</span>  
+                         SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">7</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> month  
+                  <span class="token keyword">FROM</span> nodes  
+                <span class="token keyword">UNION</span> <span class="token keyword">ALL</span>  
+                  <span class="token keyword">SELECT</span>  SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> year<span class="token punctuation">,</span>  
+                          SUBSTR<span class="token punctuation">(</span><span class="token keyword">timestamp</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">7</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> month  
+                  <span class="token keyword">FROM</span> ways  
+              <span class="token punctuation">)</span>  
+        <span class="token keyword">GROUP</span> <span class="token keyword">BY</span> year<span class="token punctuation">,</span> month  
+      <span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="right">avg_yearly</th>
+<th align="right">avg_monthly</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="right">586,036</td>
+<td align="right">53,929</td>
+</tr>
+</tbody>
+</table><br>
+<p>How many total ways tags are in this dataset, and what are the most common tags?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token comment">-- count the ways  </span>
+<span class="token keyword">SELECT</span> <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> count_ways  
+<span class="token keyword">FROM</span> ways<span class="token punctuation">;</span>  
+
+<span class="token comment">-- common way tags  </span>
+<span class="token keyword">SELECT</span>  <span class="token keyword">key</span><span class="token punctuation">,</span>  
+        <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> count_ways  
+<span class="token keyword">FROM</span> ways_tags  
+<span class="token keyword">GROUP</span> <span class="token keyword">BY</span> <span class="token keyword">key</span>  
+<span class="token keyword">HAVING</span> count_ways <span class="token operator">&gt;</span> <span class="token number">100000</span>  
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> count_ways <span class="token keyword">DESC</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">key</th>
+<th align="right">count_ways</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">-</td>
+<td align="left">Total</td>
+<td align="right">858,496</td>
+</tr>
+<tr>
+<td align="left">1</td>
+<td align="left">building</td>
+<td align="right">620,762</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">height</td>
+<td align="right">438,569</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">addr:street</td>
+<td align="right">261,635</td>
+</tr>
+<tr>
+<td align="left">4</td>
+<td align="left">addr:housenumber</td>
+<td align="right">260,847</td>
+</tr>
+<tr>
+<td align="left">5</td>
+<td align="left">highway</td>
+<td align="right">189,824</td>
+</tr>
+</tbody>
+</table><br>
+<p>How many total nodes tags are in this dataset, and what are the most common tags?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token comment">-- count the nodes  </span>
+<span class="token keyword">SELECT</span> <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> count_nodes  
+<span class="token keyword">FROM</span> nodes<span class="token punctuation">;</span>  
+
+<span class="token comment">-- common node tags  </span>
+<span class="token keyword">SELECT</span>  <span class="token keyword">key</span><span class="token punctuation">,</span>  
+        <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> count_nodes  
+<span class="token keyword">FROM</span> nodes_tags  
+<span class="token keyword">GROUP</span> <span class="token keyword">BY</span> <span class="token keyword">key</span>  
+<span class="token keyword">HAVING</span> count_nodes <span class="token operator">&gt;</span> <span class="token number">10000</span>  
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> count_nodes <span class="token keyword">DESC</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">key</th>
+<th align="right">count_nodes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">-</td>
+<td align="left">Total</td>
+<td align="right">7,932,057</td>
+</tr>
+<tr>
+<td align="left">1</td>
+<td align="left">street</td>
+<td align="right">83,171</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">housenumber</td>
+<td align="right">83,135</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">postcode</td>
+<td align="right">62,267</td>
+</tr>
+<tr>
+<td align="left">4</td>
+<td align="left">highway</td>
+<td align="right">26,828</td>
+</tr>
+<tr>
+<td align="left">5</td>
+<td align="left">barrier</td>
+<td align="right">16,292</td>
+</tr>
+<tr>
+<td align="left">6</td>
+<td align="left">power</td>
+<td align="right">13,811</td>
+</tr>
+</tbody>
+</table><br>
+<p>What are the most common amenities in Austin, TX?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span>  <span class="token keyword">value</span><span class="token punctuation">,</span>  
+        <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> count  
+<span class="token keyword">FROM</span> nodes_tags  
+<span class="token keyword">WHERE</span> <span class="token keyword">key</span><span class="token operator">=</span><span class="token string">'amenity'</span>  
+<span class="token keyword">GROUP</span> <span class="token keyword">BY</span> <span class="token keyword">value</span>  
+<span class="token keyword">HAVING</span> count <span class="token operator">&gt;=</span> <span class="token number">200</span>  
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> count <span class="token keyword">DESC</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">value</th>
+<th align="right">count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">restaurant</td>
+<td align="right">916</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">bench</td>
+<td align="right">887</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">waste_basket</td>
+<td align="right">791</td>
+</tr>
+<tr>
+<td align="left">4</td>
+<td align="left">fast_food</td>
+<td align="right">429</td>
+</tr>
+<tr>
+<td align="left">5</td>
+<td align="left">loading_dock</td>
+<td align="right">316</td>
+</tr>
+<tr>
+<td align="left">6</td>
+<td align="left">parking_entrance</td>
+<td align="right">257</td>
+</tr>
+<tr>
+<td align="left">7</td>
+<td align="left">place_of_worship</td>
+<td align="right">231</td>
+</tr>
+<tr>
+<td align="left">8</td>
+<td align="left">bicycle_parking</td>
+<td align="right">219</td>
+</tr>
+</tbody>
+</table><br>
+<p>What kind of restaurants are popular in Austin?</p>
+<pre class=" language-sql"><code class="prism  language-sql"><span class="token keyword">SELECT</span>  <span class="token keyword">value</span><span class="token punctuation">,</span>  
+        <span class="token function">COUNT</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">AS</span> count_restaurants  
+<span class="token keyword">FROM</span> nodes_tags  
+<span class="token keyword">WHERE</span> <span class="token keyword">key</span> <span class="token operator">=</span> <span class="token string">'cuisine'</span>  
+<span class="token keyword">GROUP</span> <span class="token keyword">BY</span> <span class="token keyword">value</span>  
+<span class="token keyword">ORDER</span> <span class="token keyword">BY</span> count_restaurants <span class="token keyword">DESC</span>  
+<span class="token keyword">LIMIT</span> <span class="token number">10</span><span class="token punctuation">;</span>
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th align="left"></th>
+<th align="left">value</th>
+<th align="right">count_restaurants</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">1</td>
+<td align="left">sandwich</td>
+<td align="right">116</td>
+</tr>
+<tr>
+<td align="left">2</td>
+<td align="left">pizza</td>
+<td align="right">115</td>
+</tr>
+<tr>
+<td align="left">3</td>
+<td align="left">mexican</td>
+<td align="right">110</td>
+</tr>
+<tr>
+<td align="left">4</td>
+<td align="left">coffee_shop</td>
+<td align="right">77</td>
+</tr>
+<tr>
+<td align="left">5</td>
+<td align="left">burger</td>
+<td align="right">66</td>
+</tr>
+<tr>
+<td align="left">6</td>
+<td align="left">chinese</td>
+<td align="right">40</td>
+</tr>
+<tr>
+<td align="left">7</td>
+<td align="left">american</td>
+<td align="right">38</td>
+</tr>
+<tr>
+<td align="left">8</td>
+<td align="left">indian</td>
+<td align="right">29</td>
+</tr>
+<tr>
+<td align="left">9</td>
+<td align="left">thai</td>
+<td align="right">25</td>
+</tr>
+<tr>
+<td align="left">10</td>
+<td align="left">italian</td>
+<td align="right">24</td>
+</tr>
+</tbody>
+</table><br>
+<p><strong>Other Ideas About the Dataset</strong><br>
+I think one of the best things OpenStreetMap could do to improve their data would be to develop a robust, automated cleaning process. These scripts or bots could automatically make corrections of specific errors.</p>
+<p>It looks like there is a bot (woodpeck_fixbot) modifying elements in the Austin dataset, but the scope of that project must be relatively narrow because I still found simple corrections to make in the data.</p>
+<p>The kind of bot I’m imagining is more extensive, one example would be Wall-E,<sup><a href="https://wiki.openstreetmap.org/wiki/Wall-E">19</a></sup>&nbsp; but it is currently only operational in Germany and Austria. Perhaps OSM is worried that an automated correction bot for a map as large as the United States could cause problems if it was making inaccurate ‘corrections’.</p>
+<p>Those hurdles could be overcome through proper testing. Specifically, by testing features on a very small area, and slowly widening the bot’s scope before unleashing it on the entire map.<br>
+<br></p>
+<h2 id="conclusion">Conclusion</h2>
+<p>These data went on a long journey before landing in a clean sqlite database.</p>
+<ul>
+<li>I converted pbf file to osm format using osmosis, a java-based command line tool.</li>
+<li>Then I investigated the raw data in a python notebook.</li>
+<li>Next, I cleaned, filtered, and transformed the data using a handful of python scripts and functions.</li>
+<li>Finally, I loaded the data into a sqlite database and analyzed it with SQL.</li>
+</ul>
+<p>There is additional work that could be done on the OpenStreetMap data for Austin, TX. Also, data issues are likely to be a constant problem for OSM until someone implements a more widespread automated cleaning process.<br>
+<br><br></p>
+<pre><code>    ____                           ______                __
+   / __ )_________  ____  ____ ___/_  __/___  ____ _____/ /
+  / __  / ___/ __ \/ __ \/_  // _ \/ / / __ \/ __ `/ __  / 
+ / /_/ / /  / /_/ / / / / / //  __/ / / /_/ / /_/ / /_/ /  
+/_____/_/   \____/_/ /_/ /___|___/_/  \____/\__,_/\__,_/
+</code></pre>
+
+    </div>
+  </div>
+</body>
+
+</html>
