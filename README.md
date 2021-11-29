@@ -6,7 +6,8 @@ Udacity | Project: OpenStreetMap Data
 
 ***
 
-> Most of the files that would be located in the data folder for this project are too large for GitHub to accept. Those can instead be found on my google drive (link in data folder readme).
+> Most of the files that would be located in the data folder for this project are too large for GitHub to accept.  
+> Those larger files can be found in my google drive repo mirror (link in data folder readme).
 
 <br>
 
