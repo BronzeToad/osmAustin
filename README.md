@@ -1,6 +1,7 @@
 # osmAustin
 WGU | Data Wrangling  
 Udacity | Project: OpenStreetMap Data
+Python 3.10
 
 <br>
 
