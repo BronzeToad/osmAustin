@@ -1,2 +1,3 @@
 # osmAustin
-WGU | Data Wrangling | Project: OpenStreetMap Data
+WGU | Data Wrangling
+Udacity | Project: OpenStreetMap Data
