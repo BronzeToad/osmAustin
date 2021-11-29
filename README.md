@@ -2,7 +2,13 @@
 WGU | Data Wrangling  
 Udacity | Project: OpenStreetMap Data
 
+<br>
+
 ***
+
+> Most of the files that would be located in the data folder for this project are too large for GitHub to accept. Those can instead be found on my google drive (link in data folder readme).
+
+<br>
 
 ## Project Files
 - data &#x2192;
@@ -43,3 +49,15 @@ Udacity | Project: OpenStreetMap Data
     - osmDBstats_ways
     - osmDBstats_ways_nodes
     - osmDBstats_ways_tags
+
+***
+
+<br>
+
+~~~
+    ____                           ______                __
+   / __ )_________  ____  ____ ___/_  __/___  ____ _____/ /
+  / __  / ___/ __ \/ __ \/_  // _ \/ / / __ \/ __ `/ __  / 
+ / /_/ / /  / /_/ / / / / / //  __/ / / /_/ / /_/ / /_/ /  
+/_____/_/   \____/_/ /_/ /___|___/_/  \____/\__,_/\__,_/
+~~~
