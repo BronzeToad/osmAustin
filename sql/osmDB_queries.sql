@@ -6,109 +6,182 @@
 
 -- number of unique contributors
 SELECT COUNT(DISTINCT uid) AS contributors
-FROM (
-       SELECT uid FROM nodes
-      UNION ALL
-       SELECT uid FROM ways
-     );
+FROM  (
+          SELECT uid FROM nodes
+        UNION ALL
+          SELECT uid FROM ways
+      );
+
+
+-- top 3 contributors
+SELECT  uid,
+        user,
+        COUNT(*) AS contributions
+FROM  (
+          SELECT uid, user FROM nodes
+        UNION ALL
+          SELECT uid, user FROM ways
+      )
+GROUP BY uid, user
+ORDER BY contributions DESC
+LIMIT 3;
 
 
 -- top 10 contributors
-SELECT uid
-     , user
-     , COUNT(*) AS contributions
-FROM (
-       SELECT uid, user FROM nodes
-      UNION ALL
-       SELECT uid, user FROM ways
-     )
+SELECT  uid,
+        user,
+        COUNT(*) AS contributions
+FROM  (
+          SELECT uid, user FROM nodes
+        UNION ALL
+          SELECT uid, user FROM ways
+      )
 GROUP BY uid, user
 ORDER BY contributions DESC
 LIMIT 10;
 
 
--- contribution frequency by year
-SELECT year
-     , COUNT(*) AS contributions
-FROM (
-       SELECT SUBSTR(timestamp, 1, 4) AS year FROM nodes
-      UNION ALL
-       SELECT SUBSTR(timestamp, 1, 4) AS year FROM ways
-     )
+-- contributions per year
+SELECT  year,
+        COUNT(*) AS contributions
+FROM  (
+          SELECT SUBSTR(timestamp, 1, 4) AS year FROM nodes
+        UNION ALL
+          SELECT SUBSTR(timestamp, 1, 4) AS year FROM ways
+      )
 GROUP BY year
 ORDER BY year;
 
 
+-- years with the most contributions
+SELECT  year,
+        COUNT(*) AS contributions
+FROM  (
+          SELECT SUBSTR(timestamp, 1, 4) AS year FROM nodes
+        UNION ALL
+          SELECT SUBSTR(timestamp, 1, 4) AS year FROM ways
+      )
+GROUP BY year
+ORDER BY contributions DESC
+LIMIT 3;
+
+
 -- contribution frequency by month
-SELECT CASE
-        WHEN mon = '01' THEN 'January'
-        WHEN mon = '02' THEN 'February'
-        WHEN mon = '03' THEN 'March'
-        WHEN mon = '04' THEN 'April'
-        WHEN mon = '05' THEN 'May'
-        WHEN mon = '06' THEN 'June'
-        WHEN mon = '07' THEN 'July'
-        WHEN mon = '08' THEN 'August'
-        WHEN mon = '09' THEN 'September'
-        WHEN mon = '10' THEN 'October'
-        WHEN mon = '11' THEN 'November'
-        WHEN mon = '12' THEN 'December'
-        END AS month
-      , COUNT(*) AS contributions
-FROM (
-       SELECT SUBSTR(timestamp, 6, 2) AS mon FROM nodes
-      UNION ALL
-       SELECT SUBSTR(timestamp, 6, 2) AS mon FROM ways
-     )
+SELECT  CASE
+          WHEN mon = '01' THEN 'January'
+          WHEN mon = '02' THEN 'February'
+          WHEN mon = '03' THEN 'March'
+          WHEN mon = '04' THEN 'April'
+          WHEN mon = '05' THEN 'May'
+          WHEN mon = '06' THEN 'June'
+          WHEN mon = '07' THEN 'July'
+          WHEN mon = '08' THEN 'August'
+          WHEN mon = '09' THEN 'September'
+          WHEN mon = '10' THEN 'October'
+          WHEN mon = '11' THEN 'November'
+          WHEN mon = '12' THEN 'December'
+        END AS month,
+        COUNT(*) AS contributions
+FROM  (
+          SELECT SUBSTR(timestamp, 6, 2) AS mon FROM nodes
+        UNION ALL
+          SELECT SUBSTR(timestamp, 6, 2) AS mon FROM ways
+      )
 GROUP BY month
 ORDER BY mon;
 
 
+-- months with the most contributions
+SELECT  CASE
+          WHEN mon = '01' THEN 'January'
+          WHEN mon = '02' THEN 'February'
+          WHEN mon = '03' THEN 'March'
+          WHEN mon = '04' THEN 'April'
+          WHEN mon = '05' THEN 'May'
+          WHEN mon = '06' THEN 'June'
+          WHEN mon = '07' THEN 'July'
+          WHEN mon = '08' THEN 'August'
+          WHEN mon = '09' THEN 'September'
+          WHEN mon = '10' THEN 'October'
+          WHEN mon = '11' THEN 'November'
+          WHEN mon = '12' THEN 'December'
+        END AS month,
+        COUNT(*) AS contributions
+FROM  (
+          SELECT SUBSTR(timestamp, 6, 2) AS mon FROM nodes
+        UNION ALL
+          SELECT SUBSTR(timestamp, 6, 2) AS mon FROM ways
+      )
+GROUP BY month
+ORDER BY contributions
+LIMIT 3;
+
+
+-- average monthly and yearly contributions
+SELECT  SUM(contributions) / COUNT(DISTINCT year) AS avg_yearly,
+        SUM(contributions) / COUNT(DISTINCT month) AS avg_monthly
+FROM  (
+        SELECT  year,
+                month,
+                COUNT(*) AS contributions
+        FROM  (
+                SELECT  SUBSTR(timestamp, 1, 4) AS year,
+                        SUBSTR(timestamp, 1, 7) AS month
+                FROM nodes
+                UNION ALL
+                SELECT  SUBSTR(timestamp, 1, 4) AS year,
+                        SUBSTR(timestamp, 1, 7) AS month
+                FROM ways
+              )
+        GROUP BY year, month
+      );
+
+
 -- count the ways
-SELECT COUNT(*) AS n
+SELECT COUNT(*) AS count_ways
 FROM ways;
 
 
+-- common way tags
+SELECT  key,
+        COUNT(*) AS count_ways
+FROM ways_tags
+GROUP BY key
+HAVING count_ways > 25000
+ORDER BY count_ways DESC;
+
+
 -- count the nodes
-SELECT COUNT(*) AS n
+SELECT COUNT(*) AS count_nodes
 FROM nodes;
 
 
--- common way tags
-SELECT key
-     , COUNT(*) AS n
-FROM ways_tags
-GROUP BY key
-HAVING n > 25000
-ORDER BY n DESC;
-
-
 -- common node tags
-SELECT key
-     , COUNT(*) AS n
+SELECT  key,
+        COUNT(*) AS count_nodes
 FROM nodes_tags
 GROUP BY key
-HAVING n > 3000
-ORDER BY n DESC;
+HAVING count_nodes > 3000
+ORDER BY count_nodes DESC;
 
 
 -- common amenities
-SELECT value
-     , COUNT(*) AS n
+SELECT  value,
+        COUNT(*) AS count
 FROM nodes_tags
 WHERE key='amenity'
 GROUP BY value
-HAVING n >= 100
-ORDER BY n DESC;
+HAVING count >= 100
+ORDER BY count DESC;
 
 
 -- restaurant categories
-SELECT value
-     , COUNT(*) AS n
+SELECT  value,
+        COUNT(*) AS count_restaurants
 FROM nodes_tags
 WHERE key = 'cuisine'
 GROUP BY value
-ORDER BY n DESC
+ORDER BY count_restaurants DESC
 LIMIT 10;
 
 
