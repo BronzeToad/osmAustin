@@ -13,6 +13,13 @@ Python 3.10
 <br>
 
 ## Project Files
+- docs &#x2192;
+  - osmAustin-Project-Doc-Abbr.html
+  - osmAustin-Project-Doc-Abbr.md
+  - osmAustin-Project-Doc-Abbr.pdf
+  - osmAustin-Project-Doc-Full.html
+  - osmAustin-Project-Doc-Full.md
+  - osmAustin-Project-Doc-Full.pdf
 - data &#x2192;
   - austin_texas.osm
   - sample_atx.osm
@@ -26,8 +33,8 @@ Python 3.10
   - sql &#x2192;
     - osmDB.sqlite
 - other &#x2192;
-  - osmAustin-Project-Doc_txt.html
-  - osmAustin-Projct-Doc.html
+  - osmAustin-Project-Doc-Abbr_txt.html
+  - osmAustin-Projct-Doc-Full_txt.html
   - osmosis.txt
 - py &#x2192;
   - osmAudit.py
