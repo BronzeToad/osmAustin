@@ -1,0 +1,14 @@
+# install homebrew
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# install osmosis
+brew install osmosis
+
+# convert pbf to osm
+osmosis --read-pbf \austin_texas.osm.pbf --write-xml austin_texas.osm
+
+# get sample dataset for testing/development
+osmosis --rx file=austin_texas.osm --tf accept-ways addr:state=TX --un --wx sample_atx.osm
+
+# get sample dataset for project submission
+osmosis --rx file=sample_atx.osm --tf accept-ways addr:postcode=78645 --un --wx small_sample_atx.osm
