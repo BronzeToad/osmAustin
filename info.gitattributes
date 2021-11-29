@@ -1,11 +1,10 @@
 # overrirde language classification
-project-docs/py/* linguist-language=python
-project-docs/sql/* linguist-language=sql
+*.sql linguist-language=SQL
+*.py linguist-language=Python
+*.ipynb linguist-language=Python
 
 # exclude from stats
-project-docs/data/* linguist-documentation
-project-docs/other/* linguist-documentation
-docs/LICENSE linguist-documentation
-docs/README.md linguist-documentation
-docs/osmAustin-Project-Doc.md linguist-documentation
-docs/osmAustin-Project-Doc.pdf linguist-documentation
+data/* linguist-detectable=false
+other/* linguist-detectable=false
+osmAustin-Project-Doc.md linguist-detectable=false
+osmAustin-Project-Doc.pdf linguist-detectable=false
