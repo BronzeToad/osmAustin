@@ -1,0 +1,11 @@
+# overrirde language classification
+project-docs/py/* linguist-language=python
+project-docs/sql/* linguist-language=sql
+
+# exclude from stats
+project-docs/data/* linguist-documentation
+project-docs/other/* linguist-documentation
+docs/LICENSE linguist-documentation
+docs/README.md linguist-documentation
+docs/osmAustin-Project-Doc.md linguist-documentation
+docs/osmAustin-Project-Doc.pdf linguist-documentation
