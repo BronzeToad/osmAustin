@@ -4,7 +4,6 @@
 *.ipynb linguist-language=Python
 
 # exclude from stats
+docs/* linguist-detectable=false
 data/* linguist-detectable=false
 other/* linguist-detectable=false
-osmAustin-Project-Doc.md linguist-detectable=false
-osmAustin-Project-Doc.pdf linguist-detectable=false
