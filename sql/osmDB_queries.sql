@@ -147,7 +147,7 @@ SELECT  key,
         COUNT(*) AS count_ways
 FROM ways_tags
 GROUP BY key
-HAVING count_ways > 25000
+HAVING count_ways > 100000
 ORDER BY count_ways DESC;
 
 
@@ -161,7 +161,7 @@ SELECT  key,
         COUNT(*) AS count_nodes
 FROM nodes_tags
 GROUP BY key
-HAVING count_nodes > 3000
+HAVING count_nodes > 10000
 ORDER BY count_nodes DESC;
 
 
@@ -171,7 +171,7 @@ SELECT  value,
 FROM nodes_tags
 WHERE key='amenity'
 GROUP BY value
-HAVING count >= 100
+HAVING count >= 200
 ORDER BY count DESC;
 
 
