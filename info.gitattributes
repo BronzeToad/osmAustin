@@ -1,9 +1,0 @@
-# overrirde language classification
-*.sql linguist-language=SQL
-*.py linguist-language=Python
-*.ipynb linguist-language=Python
-
-# exclude from stats
-docs/* linguist-detectable=false
-data/* linguist-detectable=false
-other/* linguist-detectable=false
